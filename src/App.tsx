@@ -13,13 +13,23 @@ import {
   RotateCcw,
   Settings,
   SkipForward,
-  Sparkles,
   Trash2,
   Trophy,
   X
 } from "lucide-react";
-import { ChangeEvent, FormEvent, MouseEvent, useEffect, useId, useMemo, useRef, useState } from "react";
+import {
+  ChangeEvent,
+  FormEvent,
+  MouseEvent,
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState
+} from "react";
 
+import { GiPanda } from "react-icons/gi";
 import { Avatar, AvatarFallback, AvatarImage } from "./components/ui/avatar";
 import { Badge } from "./components/ui/badge";
 import { Button } from "./components/ui/button";
@@ -63,13 +73,67 @@ type Subject = {
   exams: ExamEntry[];
 };
 
+type FocusEntry = {
+  id: string;
+  timestamp: string;
+  duration: number;
+};
+
+type ProductivityState = {
+  focusEntries: FocusEntry[];
+};
+
+type ConfirmDialogConfig = {
+  title: string;
+  description: string;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  tone?: "default" | "danger";
+  onConfirm: () => void;
+};
+
 type AppState = {
   subjects: Subject[];
   activeSubjectId: string;
+  productivity: ProductivityState;
 };
 
 const FOCUS_DURATION = 25 * 60;
 const BREAK_DURATION = 5 * 60;
+const HISTORY_LIMIT_DAYS = 120;
+const SECONDS_PER_HOUR = 60 * 60;
+const SECONDS_PER_DAY = 24 * SECONDS_PER_HOUR;
+
+function getStartOfDay(date: Date): Date {
+  const result = new Date(date);
+  result.setHours(0, 0, 0, 0);
+  return result;
+}
+
+function isSameDay(a: Date, b: Date): boolean {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
+}
+
+function formatDuration(seconds: number): string {
+  const totalMinutes = Math.max(0, Math.floor(seconds / 60));
+  const minutesPerDay = 24 * 60;
+  const days = Math.floor(totalMinutes / minutesPerDay);
+  const hours = Math.floor((totalMinutes % minutesPerDay) / 60);
+  const minutes = totalMinutes % 60;
+  const parts: string[] = [];
+  if (days > 0) {
+    parts.push(`${days}d`);
+  }
+  if (hours > 0 || days > 0) {
+    parts.push(`${hours}h`);
+  }
+  parts.push(`${minutes}m`);
+  return parts.join(" ");
+}
 
 function createId(prefix: string): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -140,13 +204,34 @@ function isValidExam(raw: any): raw is ExamEntry {
 }
 
 function isValidSubject(raw: any): raw is Subject {
+  if (!raw || typeof raw !== "object") {
+    return false;
+  }
+
   return (
-    raw &&
-    typeof raw === "object" &&
     typeof raw.id === "string" && raw.id.trim().length > 0 &&
     typeof raw.name === "string" && raw.name.trim().length > 0 &&
     Array.isArray((raw as any).exams) &&
     (raw as any).exams.every(isValidExam)
+  );
+}
+
+function isValidFocusEntry(raw: any): raw is FocusEntry {
+  return (
+    raw &&
+    typeof raw === "object" &&
+    typeof raw.id === "string" && raw.id.trim().length > 0 &&
+    typeof raw.timestamp === "string" && !Number.isNaN(Date.parse(raw.timestamp)) &&
+    typeof raw.duration === "number"
+  );
+}
+
+function isValidProductivity(raw: any): raw is ProductivityState {
+  return (
+    raw &&
+    typeof raw === "object" &&
+    Array.isArray((raw as any).focusEntries) &&
+    (raw as any).focusEntries.every(isValidFocusEntry)
   );
 }
 
@@ -169,6 +254,10 @@ function isValidAppState(raw: any): raw is AppState {
     return false;
   }
 
+  if (!isValidProductivity((raw as any).productivity)) {
+    return false;
+  }
+
   return subjects.some((subject: Subject) => subject.id === (raw as any).activeSubjectId);
 }
 
@@ -182,7 +271,10 @@ function createDefaultState(): AppState {
         exams: DEFAULT_EXAMS.map(cloneExam)
       }
     ],
-    activeSubjectId: subjectId
+    activeSubjectId: subjectId,
+    productivity: {
+      focusEntries: []
+    }
   };
 }
 
@@ -235,6 +327,45 @@ function sanitizeSubject(raw: any, index: number): Subject | null {
   };
 }
 
+function sanitizeFocusEntry(raw: any): FocusEntry | null {
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+
+  const timestamp = typeof raw.timestamp === "string" && !Number.isNaN(Date.parse(raw.timestamp))
+    ? raw.timestamp
+    : new Date().toISOString();
+  const durationValue = Number((raw as any).duration ?? 0);
+  const duration = Number.isFinite(durationValue) ? Math.max(0, durationValue) : 0;
+  const id = typeof raw.id === "string" && raw.id.trim() ? raw.id : createId("focus");
+
+  return {
+    id,
+    timestamp,
+    duration
+  };
+}
+
+function sanitizeProductivity(raw: any): ProductivityState {
+  if (!raw || typeof raw !== "object") {
+    return { focusEntries: [] };
+  }
+
+  const entriesArray = Array.isArray((raw as any).focusEntries) ? (raw as any).focusEntries : [];
+  const cutoff = Date.now() - HISTORY_LIMIT_DAYS * 24 * 60 * 60 * 1000;
+  const sanitizedEntries = entriesArray
+    .map((entry) => sanitizeFocusEntry(entry))
+    .filter((entry): entry is FocusEntry => Boolean(entry))
+    .filter((entry) => {
+      const time = Date.parse(entry.timestamp);
+      return !Number.isNaN(time) && time >= cutoff;
+    });
+
+  return {
+    focusEntries: sanitizedEntries
+  };
+}
+
 function normalizeStoredValue(value: any): AppState {
   if (isValidAppState(value)) {
     return value;
@@ -265,7 +396,8 @@ function normalizeStoredValue(value: any): AppState {
 
     return {
       subjects: sanitizedSubjects,
-      activeSubjectId
+      activeSubjectId,
+      productivity: sanitizeProductivity((candidate as any).productivity)
     };
   }
 
@@ -283,7 +415,10 @@ function normalizeStoredValue(value: any): AppState {
           exams
         }
       ],
-      activeSubjectId: subjectId
+      activeSubjectId: subjectId,
+      productivity: {
+        focusEntries: []
+      }
     };
   }
 
@@ -479,6 +614,7 @@ function App() {
     subjects.find((subject) => subject.id === state.activeSubjectId) ?? subjects[0];
 
   const exams = activeSubject?.exams ?? [];
+  const focusEntries = state.productivity.focusEntries;
 
   const [form, setForm] = useState<ExamFormState>(() => createEmptyForm());
   const [libraryOpen, setLibraryOpen] = useState(false);
@@ -490,7 +626,38 @@ function App() {
   const [sessionType, setSessionType] = useState<"focus" | "break">("focus");
   const [secondsLeft, setSecondsLeft] = useState(FOCUS_DURATION);
   const [isRunning, setIsRunning] = useState(false);
-  const [completedPomodoros, setCompletedPomodoros] = useState(0);
+  const [productivityOpen, setProductivityOpen] = useState(false);
+  const [productivityView, setProductivityView] = useState<"day" | "week" | "month">("day");
+  const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogConfig | null>(null);
+
+  const recordFocusSession = useCallback(
+    (duration: number) => {
+      const timestamp = new Date().toISOString();
+      const cutoff = Date.now() - HISTORY_LIMIT_DAYS * 24 * 60 * 60 * 1000;
+
+      updateState((current) => {
+        const filteredEntries = current.productivity.focusEntries.filter((entry) => {
+          const entryTime = Date.parse(entry.timestamp);
+          return !Number.isNaN(entryTime) && entryTime >= cutoff;
+        });
+
+        return {
+          ...current,
+          productivity: {
+            focusEntries: [
+              ...filteredEntries,
+              {
+                id: createId("focus"),
+                timestamp,
+                duration
+              }
+            ]
+          }
+        };
+      });
+    },
+    [updateState]
+  );
 
   useEffect(() => {
     setForm(createEmptyForm());
@@ -509,10 +676,12 @@ function App() {
       return;
     }
 
+    const sessionDuration = sessionType === "focus" ? FOCUS_DURATION : BREAK_DURATION;
+
     if (secondsLeft <= 0) {
       setIsRunning(false);
       if (sessionType === "focus") {
-        setCompletedPomodoros((count) => count + 1);
+        recordFocusSession(sessionDuration);
       }
       const nextSession = sessionType === "focus" ? "break" : "focus";
       setSessionType(nextSession);
@@ -525,7 +694,7 @@ function App() {
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [isRunning, secondsLeft, sessionType]);
+  }, [isRunning, secondsLeft, sessionType, recordFocusSession]);
 
   const chartData = useMemo<ExamScore[]>(() => {
     return [...exams]
@@ -550,6 +719,95 @@ function App() {
         gradient: getCompletionGradient(exam.completion)
       }));
   }, [exams]);
+
+  const productivityStats = useMemo(() => {
+    type ParsedFocusEntry = FocusEntry & { date: Date };
+
+    const now = new Date();
+    const todayStart = getStartOfDay(now);
+    const weekStart = new Date(todayStart);
+    weekStart.setDate(weekStart.getDate() - 6);
+    const monthStart = new Date(todayStart);
+    monthStart.setDate(monthStart.getDate() - 29);
+
+    const parsedEntries = focusEntries
+      .map((entry) => {
+        const date = new Date(entry.timestamp);
+        if (Number.isNaN(date.getTime())) {
+          return null;
+        }
+        return { ...entry, date } as ParsedFocusEntry;
+      })
+      .filter(Boolean) as ParsedFocusEntry[];
+
+    const sumDurations = (entries: ParsedFocusEntry[]) =>
+      entries.reduce((acc, entry) => acc + entry.duration, 0);
+
+    const dayEntries = parsedEntries.filter((entry) => entry.date >= todayStart);
+    const weekEntries = parsedEntries.filter((entry) => entry.date >= weekStart);
+    const monthEntries = parsedEntries.filter((entry) => entry.date >= monthStart);
+
+    const weekBreakdown: { label: string; totalSeconds: number }[] = [];
+    for (let i = 0; i < 7; i += 1) {
+      const day = new Date(weekStart);
+      day.setDate(weekStart.getDate() + i);
+      if (day > todayStart) {
+        break;
+      }
+      const total = weekEntries
+        .filter((entry) => isSameDay(entry.date, day))
+        .reduce((acc, entry) => acc + entry.duration, 0);
+      weekBreakdown.push({
+        label: day.toLocaleDateString(undefined, { weekday: "short" }),
+        totalSeconds: total
+      });
+    }
+
+    const monthBreakdown: { label: string; totalSeconds: number }[] = [];
+    const cursor = new Date(monthStart);
+    let weekIndex = 1;
+    while (cursor <= todayStart) {
+      const periodStart = new Date(cursor);
+      const periodEnd = new Date(cursor);
+      periodEnd.setDate(periodEnd.getDate() + 6);
+      if (periodEnd > todayStart) {
+        periodEnd.setTime(todayStart.getTime());
+      }
+      const total = monthEntries
+        .filter((entry) => entry.date >= periodStart && entry.date <= periodEnd)
+        .reduce((acc, entry) => acc + entry.duration, 0);
+      monthBreakdown.push({ label: `Week ${weekIndex}`, totalSeconds: total });
+      cursor.setDate(cursor.getDate() + 7);
+      weekIndex += 1;
+    }
+
+    const recentSessions = dayEntries
+      .slice()
+      .sort((a, b) => b.date.getTime() - a.date.getTime())
+      .slice(0, 5)
+      .map((entry) => ({ timestamp: entry.date, duration: entry.duration }));
+
+    return {
+      day: {
+        totalSeconds: sumDurations(dayEntries),
+        entries: dayEntries
+      },
+      week: {
+        totalSeconds: sumDurations(weekEntries),
+        breakdown: weekBreakdown
+      },
+      month: {
+        totalSeconds: sumDurations(monthEntries),
+        breakdown: monthBreakdown
+      },
+      recentSessions
+    };
+  }, [focusEntries]);
+
+  const todaysPomodoros = productivityStats.day.entries.length;
+  const todaysFocusSeconds = productivityStats.day.totalSeconds;
+  const weeklyFocusSeconds = productivityStats.week.totalSeconds;
+  const monthlyFocusSeconds = productivityStats.month.totalSeconds;
 
   const examSummaries = useMemo(() => exams.slice(0, 4), [exams]);
 
@@ -684,18 +942,32 @@ function App() {
       return;
     }
 
-    updateState((current) => ({
-      ...current,
-      subjects: current.subjects.map((subject) =>
-        subject.id === activeSubject.id
-          ? { ...subject, exams: subject.exams.filter((exam) => exam.id !== id) }
-          : subject
-      )
-    }));
-    if (editingId === id) {
-      setEditingId(null);
-      setEditForm(createEmptyForm());
+    const subjectId = activeSubject.id;
+    const examToDelete = activeSubject.exams.find((exam) => exam.id === id);
+    if (!examToDelete) {
+      return;
     }
+
+    setConfirmDialog({
+      title: "Delete paper",
+      description: `Remove "${examToDelete.paper}" from ${activeSubject.name}?`,
+      confirmLabel: "Delete",
+      tone: "danger",
+      onConfirm: () => {
+        updateState((current) => ({
+          ...current,
+          subjects: current.subjects.map((subject) =>
+            subject.id === subjectId
+              ? { ...subject, exams: subject.exams.filter((exam) => exam.id !== id) }
+              : subject
+          )
+        }));
+        if (editingId === id) {
+          setEditingId(null);
+          setEditForm(createEmptyForm());
+        }
+      }
+    });
   };
 
   const handleSubjectSelect = (subjectId: string) => {
@@ -749,14 +1021,86 @@ function App() {
     setNewSubjectName(event.target.value);
   };
 
+  const handleDeleteSubject = () => {
+    if (!activeSubject) {
+      return;
+    }
+
+    const subjectId = activeSubject.id;
+    const subjectName = activeSubject.name;
+
+    setConfirmDialog({
+      title: "Delete subject",
+      description: `Delete "${subjectName}" and all associated papers?`,
+      confirmLabel: "Delete",
+      tone: "danger",
+      onConfirm: () => {
+        updateState((current) => {
+          if (!current.subjects.some((subject) => subject.id === subjectId)) {
+            return current;
+          }
+
+          const remaining = current.subjects.filter((subject) => subject.id !== subjectId);
+
+          if (remaining.length === 0) {
+            const fallbackId = createId("subject");
+            return {
+              ...current,
+              subjects: [
+                {
+                  id: fallbackId,
+                  name: "New Subject",
+                  exams: []
+                }
+              ],
+              activeSubjectId: fallbackId
+            };
+          }
+
+          return {
+            ...current,
+            subjects: remaining,
+            activeSubjectId: remaining[0].id
+          };
+        });
+
+        setIsAddingSubject(false);
+        setNewSubjectName("");
+        setLibraryOpen(false);
+      }
+    });
+  };
+
   const handleSidebarClick = (label: string) => {
     if (label === "Papers") {
       setLibraryOpen(true);
+      setTimerOpen(false);
+      setProductivityOpen(false);
       return;
     }
 
     if (label === "Alerts") {
-      setTimerOpen((previous) => !previous);
+      setTimerOpen((previous) => {
+        const next = !previous;
+        if (next) {
+          setLibraryOpen(false);
+          setProductivityOpen(false);
+        }
+        return next;
+      });
+      return;
+    }
+
+    if (label === "Analytics") {
+      setProductivityOpen((previous) => {
+        const next = !previous;
+        if (next) {
+          setLibraryOpen(false);
+          setTimerOpen(false);
+          setProductivityView("day");
+        }
+        return next;
+      });
     }
   };
 
@@ -772,10 +1116,14 @@ function App() {
     setIsRunning(false);
     setSessionType("focus");
     setSecondsLeft(FOCUS_DURATION);
-    setCompletedPomodoros(0);
   };
 
   const handleSkipSession = () => {
+    const sessionDuration = sessionType === "focus" ? FOCUS_DURATION : BREAK_DURATION;
+    if (sessionType === "focus") {
+      recordFocusSession(sessionDuration);
+    }
+
     const nextSession = sessionType === "focus" ? "break" : "focus";
     setSessionType(nextSession);
     setSecondsLeft(nextSession === "focus" ? FOCUS_DURATION : BREAK_DURATION);
@@ -1017,14 +1365,12 @@ function App() {
           <header className="glass-panel flex flex-col gap-5 px-6 py-6 md:flex-row md:items-center md:justify-between md:px-10">
             <div className="flex items-start gap-4">
               <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-900 text-white shadow-[0_12px_30px_rgba(15,23,42,0.25)]">
-                <Sparkles className="h-7 w-7" />
+                <GiPanda className="h-7 w-7" />
               </div>
               <div className="space-y-1">
-                <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
-                  Anuradha Perera
-                </p>
+
                 <h1 className="text-2xl font-semibold text-slate-900 md:text-3xl">
-                  Paper Marks Analyze
+                  STUDY BUDDY
                 </h1>
                 <div className="inline-flex items-center gap-2 rounded-full bg-white/80 px-3 py-1 text-xs font-medium text-slate-600 shadow-inner shadow-white/40">
                   <Layers className="h-3.5 w-3.5 text-slate-500" />
@@ -1037,9 +1383,7 @@ function App() {
             </div>
 
             <div className="flex flex-wrap items-center gap-4">
-              <Button variant="ghost" className="glass-panel px-5 py-2 text-slate-700 shadow-none">
-                Set as default
-              </Button>
+
               <Separator className="hidden h-10 w-px md:block" />
               <div className="glass-panel flex items-center gap-3 px-4 py-2">
                 <button
@@ -1114,24 +1458,41 @@ function App() {
               })}
             </div>
 
-            {isAddingSubject && (
-              <form className="flex flex-wrap items-center gap-3" onSubmit={handleCreateSubject}>
-                <Input
-                  name="subject"
-                  placeholder="e.g. Mathematics"
-                  value={newSubjectName}
-                  onChange={handleSubjectNameChange}
-                  className="w-full min-w-[220px] flex-1"
-                  autoFocus
-                />
-                <Button type="submit" disabled={!newSubjectName.trim()}>
-                  Save subject
+            <div className="flex flex-col gap-3">
+              {isAddingSubject && (
+                <form className="flex flex-wrap items-center gap-3" onSubmit={handleCreateSubject}>
+                  <Input
+                    name="subject"
+                    placeholder="e.g. Mathematics"
+                    value={newSubjectName}
+                    onChange={handleSubjectNameChange}
+                    className="w-full min-w-[220px] flex-1"
+                    autoFocus
+                  />
+                  <Button type="submit" disabled={!newSubjectName.trim()}>
+                    Save subject
+                  </Button>
+                  <Button type="button" variant="ghost" onClick={handleToggleSubjectForm}>
+                    Cancel
+                  </Button>
+                </form>
+              )}
+
+              <div className="flex w-full flex-wrap items-center gap-3">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="bg-rose-500/10 text-rose-600 hover:bg-rose-500/15"
+                  onClick={handleDeleteSubject}
+                  disabled={!activeSubject || subjects.length <= 1}
+                >
+                  Delete subject
                 </Button>
-                <Button type="button" variant="ghost" onClick={handleToggleSubjectForm}>
-                  Cancel
-                </Button>
-              </form>
-            )}
+                <p className="text-xs text-slate-400">
+                  Removes {activeSubject ? activeSubject.name : "this subject"} and its papers. At least one subject must remain.
+                </p>
+              </div>
+            </div>
           </div>
 
           <main className="space-y-6">
@@ -1432,14 +1793,29 @@ function App() {
 
       <footer className="mx-auto mt-10 max-w-[1280px] text-center text-sm text-slate-400">
         <p>
-          ජීවිතය❤ Physics - Anuradha Perera · Crafted with curiosity by Single Developers
+          Built By NullbitZer0 &copy; 2024. All rights reserved.
         </p>
       </footer>
     </div>
 
+      {productivityOpen && (
+        <ProductivityPanel
+          onClose={() => setProductivityOpen(false)}
+          view={productivityView}
+          onChangeView={setProductivityView}
+          totals={{
+            day: todaysFocusSeconds,
+            week: weeklyFocusSeconds,
+            month: monthlyFocusSeconds
+          }}
+          weekBreakdown={productivityStats.week.breakdown}
+          monthBreakdown={productivityStats.month.breakdown}
+          recentSessions={productivityStats.recentSessions}
+        />
+      )}
+
       {timerOpen && (
         <PomodoroTimer
-          open={timerOpen}
           onClose={handleCloseTimer}
           sessionType={sessionType}
           secondsLeft={secondsLeft}
@@ -1448,7 +1824,18 @@ function App() {
           onReset={handleResetTimer}
           onSkip={handleSkipSession}
           onSelectSession={handleSessionSelect}
-          completedPomodoros={completedPomodoros}
+          todaysPomodoros={todaysPomodoros}
+        />
+      )}
+
+      {confirmDialog && (
+        <ConfirmDialog
+          {...confirmDialog}
+          onConfirm={() => {
+            confirmDialog.onConfirm();
+            setConfirmDialog(null);
+          }}
+          onCancel={() => setConfirmDialog(null)}
         />
       )}
     </>
@@ -1482,10 +1869,8 @@ function StatsCard({
   );
 }
 
-export default App;
 
 type PomodoroTimerProps = {
-  open: boolean;
   onClose: () => void;
   sessionType: "focus" | "break";
   secondsLeft: number;
@@ -1494,7 +1879,7 @@ type PomodoroTimerProps = {
   onReset: () => void;
   onSkip: () => void;
   onSelectSession: (type: "focus" | "break") => void;
-  completedPomodoros: number;
+  todaysPomodoros: number;
 };
 
 function PomodoroTimer({
@@ -1506,7 +1891,7 @@ function PomodoroTimer({
   onReset,
   onSkip,
   onSelectSession,
-  completedPomodoros
+  todaysPomodoros
 }: PomodoroTimerProps) {
   const totalDuration = sessionType === "focus" ? FOCUS_DURATION : BREAK_DURATION;
   const progress = 100 - Math.round((secondsLeft / totalDuration) * 100);
@@ -1537,7 +1922,7 @@ function PomodoroTimer({
           <p className="text-xs uppercase tracking-[0.35em] text-slate-400">Pomodoro</p>
           <h3 className="text-xl font-semibold text-slate-900">{sessionType === "focus" ? "Focus Sprint" : "Break Time"}</h3>
           <p className="text-xs text-slate-500">
-            Completed cycles today: <span className="font-semibold text-slate-700">{completedPomodoros}</span>
+            Completed cycles today: <span className="font-semibold text-slate-700">{todaysPomodoros}</span>
           </p>
         </div>
 
@@ -1611,3 +1996,199 @@ function PomodoroTimer({
     </div>
   );
 }
+
+type ProductivityPanelProps = {
+  onClose: () => void;
+  view: "day" | "week" | "month";
+  onChangeView: (view: "day" | "week" | "month") => void;
+  totals: Record<"day" | "week" | "month", number>;
+  weekBreakdown: { label: string; totalSeconds: number }[];
+  monthBreakdown: { label: string; totalSeconds: number }[];
+  recentSessions: { timestamp: Date; duration: number }[];
+};
+
+const PERIOD_TARGETS: Record<"day" | "week" | "month", number> = {
+  day: SECONDS_PER_DAY,
+  week: 7 * SECONDS_PER_DAY,
+  month: 30 * SECONDS_PER_DAY
+};
+
+function ProductivityPanel({
+  onClose,
+  view,
+  onChangeView,
+  totals,
+  weekBreakdown,
+  monthBreakdown,
+  recentSessions
+}: ProductivityPanelProps) {
+  const targetSeconds = PERIOD_TARGETS[view];
+  const totalSeconds = totals[view] ?? 0;
+  const focusPercentage = Math.min(100, (totalSeconds / targetSeconds) * 100);
+  const pieStyle = {
+    background: `conic-gradient(#4C6ED7 ${focusPercentage}%, rgba(226,232,240,0.95) ${focusPercentage}% 100%)`
+  };
+  const remainingSeconds = Math.max(0, targetSeconds - totalSeconds);
+
+  const viewTabs: Array<{ value: "day" | "week" | "month"; label: string }> = [
+    { value: "day", label: "Day" },
+    { value: "week", label: "Week" },
+    { value: "month", label: "Month" }
+  ];
+
+  const listItems = (() => {
+    if (view === "day") {
+      return recentSessions.map((session, index) => ({
+        key: `session-${index}-${session.timestamp.getTime()}`,
+        label: session.timestamp.toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit"
+        }),
+        detail: formatDuration(session.duration)
+      }));
+    }
+
+    const breakdown = view === "week" ? weekBreakdown : monthBreakdown;
+    return breakdown.map((item, index) => ({
+      key: `breakdown-${index}-${item.label}`,
+      label: item.label,
+      detail: formatDuration(item.totalSeconds)
+    }));
+  })();
+
+  const titleMap = {
+    day: "Today",
+    week: "This Week",
+    month: "Last 30 Days"
+  } as const;
+
+  return (
+    <div className="fixed top-24 right-12 z-40 w-[360px]">
+      <div className="glass-panel relative space-y-6 rounded-3xl bg-white/85 p-6 shadow-[0_35px_60px_rgba(15,23,42,0.25)]">
+        <button
+          type="button"
+          className="absolute right-4 top-4 rounded-full bg-white/70 p-1.5 text-slate-400 transition hover:text-slate-600"
+          onClick={onClose}
+          aria-label="Close productivity panel"
+        >
+          <X className="h-4 w-4" />
+        </button>
+
+        <div className="space-y-3 pr-8">
+          <p className="text-xs uppercase tracking-[0.35em] text-slate-400">Focus insights</p>
+          <h3 className="text-xl font-semibold text-slate-900">{titleMap[view]}</h3>
+          <p className="text-xs text-slate-500">
+            Total focus time resets daily at midnight and accumulates automatically from Pomodoro sessions.
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2">
+          {viewTabs.map((tab) => {
+            const isActive = tab.value === view;
+            return (
+              <button
+                key={tab.value}
+                type="button"
+                className={cn(
+                  "flex-1 rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] transition",
+                  isActive
+                    ? "bg-slate-900 text-white shadow-[0_12px_25px_rgba(15,23,42,0.25)]"
+                    : "bg-white/70 text-slate-500 hover:text-slate-700"
+                )}
+                onClick={() => onChangeView(tab.value)}
+              >
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="flex items-center gap-6">
+          <div className="relative h-32 w-32 rounded-full" style={pieStyle}>
+            <div className="absolute inset-[12%] rounded-full bg-white/90 shadow-inner shadow-white/70" />
+            <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
+              <span className="text-sm font-semibold text-slate-500">Focus</span>
+              <span className="text-lg font-semibold text-slate-900">{formatDuration(totalSeconds)}</span>
+            </div>
+          </div>
+          <div className="flex-1 space-y-2 text-sm text-slate-600">
+            <p>
+              Target: <span className="font-semibold text-slate-900">{formatDuration(targetSeconds)}</span>
+            </p>
+            <p>
+              Remaining: <span className="font-semibold text-slate-900">{formatDuration(remainingSeconds)}</span>
+            </p>
+            <p>
+              Completion: <span className="font-semibold text-slate-900">{focusPercentage.toFixed(0)}%</span>
+            </p>
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
+            {view === "day" ? "Latest sessions" : "Breakdown"}
+          </p>
+          {listItems.length > 0 ? (
+            <ul className="space-y-2 text-sm text-slate-600">
+              {listItems.map((item) => (
+                <li
+                  key={item.key}
+                  className="flex items-center justify-between rounded-xl bg-white/80 px-3 py-2 shadow-inner shadow-white/60"
+                >
+                  <span>{item.label}</span>
+                  <span className="font-semibold text-slate-900">{item.detail}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-xs text-slate-500">Complete a focus session to populate this view.</p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+type ConfirmDialogProps = ConfirmDialogConfig & {
+  onConfirm: () => void;
+  onCancel: () => void;
+};
+
+function ConfirmDialog({
+  title,
+  description,
+  confirmLabel = "Confirm",
+  cancelLabel = "Cancel",
+  tone = "default",
+  onConfirm,
+  onCancel
+}: ConfirmDialogProps) {
+  const confirmClass = tone === "danger"
+    ? "bg-rose-500 text-white hover:bg-rose-500/90"
+    : "bg-slate-900 text-white hover:bg-slate-800";
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm px-4"
+      onClick={onCancel}
+    >
+      <div
+        className="glass-panel w-full max-w-sm space-y-5 rounded-3xl bg-white/90 p-6 shadow-[0_40px_70px_rgba(15,23,42,0.4)]"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <h3 className="text-xl font-semibold text-slate-900">{title}</h3>
+        <p className="text-sm text-slate-500">{description}</p>
+        <div className="flex justify-end gap-3">
+          <Button type="button" variant="ghost" className="bg-white/70 text-slate-600 hover:bg-white" onClick={onCancel}>
+            {cancelLabel}
+          </Button>
+          <Button type="button" className={cn("px-4", confirmClass)} onClick={onConfirm}>
+            {confirmLabel}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default App;

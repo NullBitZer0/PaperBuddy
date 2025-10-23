@@ -34,3 +34,7 @@ bun run preview
 - Use the Book icon in the sidebar to open the paper library overlay.
 - Add new entries from the dashboard card, then edit or delete them inline; all changes persist in local storage.
 - Add subjects (e.g., Maths, Biology) from the subject switcher and swap between them to view dedicated analytics per subject.
+
+## Focus Timer & Analytics
+- Use the bell icon to run the built-in Pomodoro timer; completed focus sessions automatically log study time.
+- Open the analytics (chart) icon to review day/week/month focus totals with a pie-chart visualization that resets daily at midnight.
