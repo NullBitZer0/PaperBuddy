@@ -1,4 +1,4 @@
-# Marks Analyze Dashboard
+# Paper Buddy
 
 A responsive React + TypeScript dashboard inspired by the provided UI reference. The layout is built with Tailwind CSS and lightweight shadcn-style components.
 
