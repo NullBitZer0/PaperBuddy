@@ -1,5 +1,6 @@
 import {
   Bell,
+  Clock,
   BookOpen,
   ChartBar,
   Home,
@@ -160,7 +161,7 @@ function formatDuration(seconds: number): string {
 const sidebarItems = [
   { icon: Home, label: "Overview", gradient: "from-sky-400 to-blue-600" },
   { icon: BookOpen, label: "Papers", gradient: "from-emerald-400 to-emerald-500" },
-  { icon: Bell, label: "Alerts", gradient: "from-amber-400 to-orange-500" },
+  { icon: Clock, label: "Alerts", gradient: "from-amber-400 to-orange-500" },
   { icon: ChartBar, label: "Analytics", gradient: "from-fuchsia-400 to-purple-500" },
   { icon: Layers, label: "Resources", gradient: "from-indigo-400 to-indigo-600" },
   { icon: Settings, label: "Settings", gradient: "from-rose-400 to-rose-600" }
@@ -878,12 +879,10 @@ function App() {
 
   if (isAuthLoading) {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-slate-100 px-6 text-center text-slate-500">
-        <span className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">
-          Checking session
-        </span>
-        <p className="text-sm">Hang tight while we secure your dashboard…</p>
-      </div>
+      <AnimatedLoadingScreen
+        headline="Authenticating"
+        subtext="Hang tight while we secure your dashboard..."
+      />
     );
   }
 
@@ -1035,10 +1034,16 @@ function App() {
   }
 
   if (isLoading && subjects.length === 0) {
+    const awaitingEmailConfirmation = Boolean(user && !user.email_confirmed_at);
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-100 text-slate-500">
-        Loading dashboard…
-      </div>
+      <AnimatedLoadingScreen
+        headline={awaitingEmailConfirmation ? "Confirm your email" : "Syncing your study data"}
+        subtext={
+          awaitingEmailConfirmation
+            ? `We sent a verification link to ${user?.email ?? "your inbox"}. Open it to activate your account, then sign in again.`
+            : "Fetching papers, analytics, and focus history from Supabase."
+        }
+      />
     );
   }
 
@@ -1623,17 +1628,17 @@ function App() {
 
             <div className="flex flex-wrap items-center gap-4">
               <Separator className="hidden h-10 w-px md:block" />
+              <button
+                type="button"
+                className="relative rounded-full bg-white/80 p-2 text-slate-500 transition hover:text-slate-700"
+                aria-label="Notifications"
+              >
+                <Bell className="h-5 w-5" />
+                <span className="absolute -right-0.5 -top-0.5 inline-flex h-3.5 w-3.5 items-center justify-center rounded-full bg-rose-500 text-[9px] font-bold text-white">
+                  3
+                </span>
+              </button>
               <div className="glass-panel flex flex-wrap items-center gap-3 px-4 py-2">
-                <button
-                  type="button"
-                  className="relative rounded-full bg-white/80 p-2 text-slate-500 transition hover:text-slate-700"
-                  aria-label="Notifications"
-                >
-                  <Bell className="h-5 w-5" />
-                  <span className="absolute -right-0.5 -top-0.5 inline-flex h-3.5 w-3.5 items-center justify-center rounded-full bg-rose-500 text-[9px] font-bold text-white">
-                    3
-                  </span>
-                </button>
                 <div className="flex items-center gap-3">
                   <Avatar>
                     {avatarUrl ? (
@@ -1648,17 +1653,17 @@ function App() {
                     </p>
                   </div>
                 </div>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="ml-auto bg-white/80 text-slate-600 hover:bg-white"
-                  onClick={handleSignOut}
-                  disabled={isAuthLoading || isLoading}
-                >
-                  <LogOut className="mr-1.5 h-4 w-4" />
-                  Sign out
-                </Button>
+                {/*<Button*/}
+                {/*  type="button"*/}
+                {/*  variant="ghost"*/}
+                {/*  size="sm"*/}
+                {/*  className="ml-auto bg-white/80 text-slate-600 hover:bg-white"*/}
+                {/*  onClick={handleSignOut}*/}
+                {/*  disabled={isAuthLoading || isLoading}*/}
+                {/*>*/}
+                {/*  <LogOut className="mr-1.5 h-4 w-4" />*/}
+                {/*  Sign out*/}
+                {/*</Button>*/}
               </div>
             </div>
           </header>
@@ -2644,3 +2649,38 @@ function ConfirmDialog({
 }
 
 export default App;
+
+function AnimatedLoadingScreen({
+  headline,
+  subtext
+}: {
+  headline: string;
+  subtext: string;
+}) {
+  return (
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-slate-950 text-slate-100">
+      <div className="absolute inset-0 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950" />
+      <div className="absolute -top-16 left-1/3 h-72 w-72 rounded-full bg-sky-500/20 blur-3xl" />
+      <div className="absolute bottom-[-6rem] right-[-3rem] h-96 w-96 rounded-full bg-emerald-500/20 blur-3xl" />
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.08),_transparent_60%)]" />
+      <div className="relative z-10 flex flex-col items-center gap-8 px-6 text-center">
+        <div className="relative h-28 w-28">
+          <div className="absolute inset-0 rounded-full border-4 border-white/10" />
+          <div className="absolute inset-0 rounded-full border-4 border-transparent border-r-sky-400 border-t-emerald-400 animate-spin" />
+          <div className="absolute inset-4 flex items-center justify-center rounded-full bg-slate-950 shadow-[0_0_35px_rgba(56,189,248,0.25)]">
+            <GiPanda className="h-10 w-10 text-white" />
+          </div>
+        </div>
+        <div className="space-y-3">
+          <span className="text-xs font-semibold uppercase tracking-[0.4em] text-slate-300">
+            {headline}
+          </span>
+          <p className="max-w-sm text-sm text-slate-200/80">{subtext}</p>
+        </div>
+        <div className="h-1.5 w-48 overflow-hidden rounded-full bg-white/10">
+          <span className="block h-full w-1/3 rounded-full bg-gradient-to-r from-sky-400 via-emerald-400 to-sky-400 opacity-90 animate-loading-bar" />
+        </div>
+      </div>
+    </div>
+  );
+}
