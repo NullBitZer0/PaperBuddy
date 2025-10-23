@@ -48,5 +48,6 @@ bun run preview
    VITE_SUPABASE_ANON_KEY=your-anon-key
    ```
 4. Restart the dev server (`bun run dev`) so Vite picks up the new environment variables.
+5. (Optional but recommended) In Supabase dashboard, enable Email confirmations under **Authentication → Providers** so users receive the verification email that the in-app toast references.
 
 > **Note:** Row Level Security is commented inside `supabase/schema.sql`. Enable it and write policies once you introduce authentication.
