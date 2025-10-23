@@ -1,6 +1,33 @@
 -- Enable pgcrypto for UUID generation
 create extension if not exists "pgcrypto";
 
+-- Profiles store per-user settings/roles
+create table if not exists public.profiles (
+  id uuid primary key references auth.users(id) on delete cascade,
+  full_name text,
+  email text,
+  role text not null default 'student',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create or replace function public.touch_profiles_updated_at()
+returns trigger
+language plpgsql
+as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$;
+
+drop trigger if exists profiles_touch_updated_at on public.profiles;
+create trigger profiles_touch_updated_at
+before update on public.profiles
+for each row execute procedure public.touch_profiles_updated_at();
+
+create index if not exists profiles_role_idx on public.profiles(role);
+
 -- Subjects group the exam dashboards
 create table if not exists public.subjects (
   id uuid primary key default gen_random_uuid(),
@@ -80,9 +107,21 @@ before insert on public.focus_entries
 for each row execute procedure public.set_current_user();
 
 -- Example RLS configuration (optional)
+alter table public.profiles enable row level security;
 alter table public.subjects enable row level security;
 alter table public.exams enable row level security;
 alter table public.focus_entries enable row level security;
+
+create policy "Profiles are viewable by owner"
+on public.profiles
+for select
+using (id = auth.uid());
+
+create policy "Profiles are updatable by owner"
+on public.profiles
+for update
+using (id = auth.uid())
+with check (id = auth.uid());
 
 create policy "Subjects are viewable by owner"
 on public.subjects
