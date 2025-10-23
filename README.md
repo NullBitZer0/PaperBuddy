@@ -37,4 +37,16 @@ bun run preview
 
 ## Focus Timer & Analytics
 - Use the bell icon to run the built-in Pomodoro timer; completed focus sessions automatically log study time.
-- Open the analytics (chart) icon to review day/week/month focus totals with a pie-chart visualization that resets daily at midnight.
+- Open the analytics (chart) icon to review day/week/month focus totals. Day view shows a completion ring, while week/month swap to a trend line to visualise momentum.
+
+## Supabase Setup
+1. Create a Supabase project (https://supabase.com/), then run the SQL in `supabase/schema.sql` to provision the required tables.
+2. In the project settings, copy the `Project URL` and `anon` public API key. **Keep these secret.**
+3. Add a `.env` (ignored by git) with:
+   ```sh
+   VITE_SUPABASE_URL=your-project-url
+   VITE_SUPABASE_ANON_KEY=your-anon-key
+   ```
+4. Restart the dev server (`bun run dev`) so Vite picks up the new environment variables.
+
+> **Note:** Row Level Security is commented inside `supabase/schema.sql`. Enable it and write policies once you introduce authentication.

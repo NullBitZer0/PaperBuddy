@@ -25,7 +25,6 @@ import {
   useEffect,
   useId,
   useMemo,
-  useRef,
   useState
 } from "react";
 
@@ -39,7 +38,7 @@ import { Label } from "./components/ui/label";
 import { Progress } from "./components/ui/progress";
 import { Separator } from "./components/ui/separator";
 import { cn } from "./lib/utils";
-import { useLocalStorage } from "./hooks/use-local-storage";
+import { supabase, isSupabaseConfigured } from "./lib/supabaseClient";
 
 type ExamScore = {
   paper: string;
@@ -89,7 +88,7 @@ type ConfirmDialogConfig = {
   confirmLabel?: string;
   cancelLabel?: string;
   tone?: "default" | "danger";
-  onConfirm: () => void;
+  onConfirm: () => void | Promise<void>;
 };
 
 type AppState = {
@@ -135,13 +134,6 @@ function formatDuration(seconds: number): string {
   return parts.join(" ");
 }
 
-function createId(prefix: string): string {
-  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
-    return `${prefix}-${crypto.randomUUID()}`;
-  }
-  return `${prefix}-${Math.random().toString(36).slice(2, 10)}`;
-}
-
 const sidebarItems = [
   { icon: Home, label: "Overview", gradient: "from-sky-400 to-blue-600" },
   { icon: BookOpen, label: "Papers", gradient: "from-emerald-400 to-emerald-500" },
@@ -150,280 +142,6 @@ const sidebarItems = [
   { icon: Layers, label: "Resources", gradient: "from-indigo-400 to-indigo-600" },
   { icon: Settings, label: "Settings", gradient: "from-rose-400 to-rose-600" }
 ];
-
-const DEFAULT_EXAMS: ExamEntry[] = [
-  {
-    id: "exam-1",
-    paper: "2025 S2 MAIN PAPER 03",
-    mcq: 15,
-    essay: 0,
-    total: 15,
-    completion: 96
-  },
-  {
-    id: "exam-2",
-    paper: "2025 FINAL PAPER 02",
-    mcq: 8,
-    essay: 1,
-    total: 9,
-    completion: 82
-  },
-  {
-    id: "exam-3",
-    paper: "2025 FINAL PAPER 04",
-    mcq: 13,
-    essay: 1,
-    total: 14,
-    completion: 88
-  },
-  {
-    id: "exam-4",
-    paper: "2025 FINAL PAPER 05",
-    mcq: 12,
-    essay: 0,
-    total: 12,
-    completion: 74
-  }
-];
-
-function cloneExam(exam: ExamEntry): ExamEntry {
-  return { ...exam };
-}
-
-function isValidExam(raw: any): raw is ExamEntry {
-  return (
-    raw &&
-    typeof raw === "object" &&
-    typeof raw.id === "string" && raw.id.trim().length > 0 &&
-    typeof raw.paper === "string" && raw.paper.trim().length > 0 &&
-    typeof raw.mcq === "number" &&
-    typeof raw.essay === "number" &&
-    typeof raw.total === "number" &&
-    typeof raw.completion === "number"
-  );
-}
-
-function isValidSubject(raw: any): raw is Subject {
-  if (!raw || typeof raw !== "object") {
-    return false;
-  }
-
-  return (
-    typeof raw.id === "string" && raw.id.trim().length > 0 &&
-    typeof raw.name === "string" && raw.name.trim().length > 0 &&
-    Array.isArray((raw as any).exams) &&
-    (raw as any).exams.every(isValidExam)
-  );
-}
-
-function isValidFocusEntry(raw: any): raw is FocusEntry {
-  return (
-    raw &&
-    typeof raw === "object" &&
-    typeof raw.id === "string" && raw.id.trim().length > 0 &&
-    typeof raw.timestamp === "string" && !Number.isNaN(Date.parse(raw.timestamp)) &&
-    typeof raw.duration === "number"
-  );
-}
-
-function isValidProductivity(raw: any): raw is ProductivityState {
-  return (
-    raw &&
-    typeof raw === "object" &&
-    Array.isArray((raw as any).focusEntries) &&
-    (raw as any).focusEntries.every(isValidFocusEntry)
-  );
-}
-
-function isValidAppState(raw: any): raw is AppState {
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
-    return false;
-  }
-
-  if (!Array.isArray((raw as any).subjects) || (raw as any).subjects.length === 0) {
-    return false;
-  }
-
-  if (typeof (raw as any).activeSubjectId !== "string") {
-    return false;
-  }
-
-  const subjects = (raw as any).subjects;
-
-  if (!subjects.every(isValidSubject)) {
-    return false;
-  }
-
-  if (!isValidProductivity((raw as any).productivity)) {
-    return false;
-  }
-
-  return subjects.some((subject: Subject) => subject.id === (raw as any).activeSubjectId);
-}
-
-function createDefaultState(): AppState {
-  const subjectId = createId("subject");
-  return {
-    subjects: [
-      {
-        id: subjectId,
-        name: "Physics",
-        exams: DEFAULT_EXAMS.map(cloneExam)
-      }
-    ],
-    activeSubjectId: subjectId,
-    productivity: {
-      focusEntries: []
-    }
-  };
-}
-
-function sanitizeExam(raw: any, index: number): ExamEntry | null {
-  if (!raw || typeof raw !== "object") {
-    return null;
-  }
-
-  const paper = typeof raw.paper === "string" && raw.paper.trim() ? raw.paper.trim() : `Paper ${index + 1}`;
-  const mcqValue = Number((raw as any).mcq ?? 0);
-  const essayValue = Number((raw as any).essay ?? 0);
-  const totalValue = Number((raw as any).total ?? mcqValue + essayValue);
-  const completionValue = Number((raw as any).completion ?? 0);
-
-  const mcq = Number.isFinite(mcqValue) ? mcqValue : 0;
-  const essay = Number.isFinite(essayValue) ? essayValue : 0;
-  const total = Number.isFinite(totalValue) ? totalValue : mcq + essay;
-  const completion = Number.isFinite(completionValue)
-    ? Math.min(100, Math.max(0, completionValue))
-    : 0;
-
-  const id = typeof raw.id === "string" && raw.id.trim() ? raw.id : createId("exam");
-
-  return {
-    id,
-    paper,
-    mcq,
-    essay,
-    total,
-    completion
-  };
-}
-
-function sanitizeSubject(raw: any, index: number): Subject | null {
-  if (!raw || typeof raw !== "object") {
-    return null;
-  }
-
-  const name = typeof raw.name === "string" && raw.name.trim() ? raw.name.trim() : `Subject ${index + 1}`;
-  const id = typeof raw.id === "string" && raw.id.trim() ? raw.id : createId("subject");
-  const examsArray = Array.isArray((raw as any).exams) ? (raw as any).exams : [];
-  const exams = examsArray
-    .map((exam: any, examIndex: number) => sanitizeExam(exam, examIndex))
-    .filter(Boolean) as ExamEntry[];
-
-  return {
-    id,
-    name,
-    exams
-  };
-}
-
-function sanitizeFocusEntry(raw: any): FocusEntry | null {
-  if (!raw || typeof raw !== "object") {
-    return null;
-  }
-
-  const timestamp = typeof raw.timestamp === "string" && !Number.isNaN(Date.parse(raw.timestamp))
-    ? raw.timestamp
-    : new Date().toISOString();
-  const durationValue = Number((raw as any).duration ?? 0);
-  const duration = Number.isFinite(durationValue) ? Math.max(0, durationValue) : 0;
-  const id = typeof raw.id === "string" && raw.id.trim() ? raw.id : createId("focus");
-
-  return {
-    id,
-    timestamp,
-    duration
-  };
-}
-
-function sanitizeProductivity(raw: any): ProductivityState {
-  if (!raw || typeof raw !== "object") {
-    return { focusEntries: [] };
-  }
-
-  const entriesArray = Array.isArray((raw as any).focusEntries) ? (raw as any).focusEntries : [];
-  const cutoff = Date.now() - HISTORY_LIMIT_DAYS * 24 * 60 * 60 * 1000;
-  const sanitizedEntries = entriesArray
-    .map((entry) => sanitizeFocusEntry(entry))
-    .filter((entry): entry is FocusEntry => Boolean(entry))
-    .filter((entry) => {
-      const time = Date.parse(entry.timestamp);
-      return !Number.isNaN(time) && time >= cutoff;
-    });
-
-  return {
-    focusEntries: sanitizedEntries
-  };
-}
-
-function normalizeStoredValue(value: any): AppState {
-  if (isValidAppState(value)) {
-    return value;
-  }
-
-  if (value && typeof value === "object" && !Array.isArray(value) && Array.isArray((value as any).subjects)) {
-    const candidate = value as AppState;
-    const sanitizedSubjects: Subject[] = [];
-
-    (candidate.subjects as any[]).forEach((subject, index) => {
-      const sanitized = sanitizeSubject(subject, index);
-      if (sanitized) {
-        sanitizedSubjects.push(sanitized);
-      }
-    });
-
-    if (sanitizedSubjects.length === 0) {
-      return createDefaultState();
-    }
-
-    let activeSubjectId = typeof candidate.activeSubjectId === "string" && candidate.activeSubjectId.trim()
-      ? candidate.activeSubjectId
-      : sanitizedSubjects[0].id;
-
-    if (!sanitizedSubjects.some((subject) => subject.id === activeSubjectId)) {
-      activeSubjectId = sanitizedSubjects[0].id;
-    }
-
-    return {
-      subjects: sanitizedSubjects,
-      activeSubjectId,
-      productivity: sanitizeProductivity((candidate as any).productivity)
-    };
-  }
-
-  if (Array.isArray(value)) {
-    const subjectId = createId("subject");
-    const exams = value
-      .map((exam, index) => sanitizeExam(exam, index))
-      .filter(Boolean) as ExamEntry[];
-
-    return {
-      subjects: [
-        {
-          id: subjectId,
-          name: "Physics",
-          exams
-        }
-      ],
-      activeSubjectId: subjectId,
-      productivity: {
-        focusEntries: []
-      }
-    };
-  }
-
-  return createDefaultState();
-}
 
 function getCompletionGradient(value: number): string {
   if (value >= 85) {
@@ -583,38 +301,11 @@ function LineChart({ data }: { data: ExamScore[] }) {
 }
 
 function App() {
-  const defaultStateRef = useRef<AppState>();
-  if (!defaultStateRef.current) {
-    defaultStateRef.current = createDefaultState();
-  }
-
-  const [storedValue, setStoredValue] = useLocalStorage<any>(
-    "marks-analyze-exams",
-    defaultStateRef.current
-  );
-
-  const normalizedState = useMemo(() => normalizeStoredValue(storedValue), [storedValue]);
-
-  useEffect(() => {
-    if (normalizedState !== storedValue) {
-      setStoredValue(normalizedState);
-    }
-  }, [normalizedState, storedValue, setStoredValue]);
-
-  const updateState = (updater: (current: AppState) => AppState) => {
-    setStoredValue((previous: any) => {
-      const base = normalizeStoredValue(previous);
-      return updater(base);
-    });
-  };
-
-  const state: AppState = normalizedState;
-  const subjects = state.subjects;
-  const activeSubject =
-    subjects.find((subject) => subject.id === state.activeSubjectId) ?? subjects[0];
-
-  const exams = activeSubject?.exams ?? [];
-  const focusEntries = state.productivity.focusEntries;
+  const [subjects, setSubjects] = useState<Subject[]>([]);
+  const [activeSubjectId, setActiveSubjectId] = useState<string | null>(null);
+  const [focusEntries, setFocusEntries] = useState<FocusEntry[]>([]);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
 
   const [form, setForm] = useState<ExamFormState>(() => createEmptyForm());
   const [libraryOpen, setLibraryOpen] = useState(false);
@@ -630,40 +321,118 @@ function App() {
   const [productivityView, setProductivityView] = useState<"day" | "week" | "month">("day");
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogConfig | null>(null);
 
+  const activeSubject = subjects.find((subject) => subject.id === activeSubjectId) ?? subjects[0];
+  const exams = activeSubject?.exams ?? [];
+
+  const loadSubjects = useCallback(async () => {
+    if (!isSupabaseConfigured) {
+      setSubjects([]);
+      setActiveSubjectId(null);
+      return;
+    }
+    setError(null);
+    const { data, error } = await supabase
+      .from("subjects")
+      .select(
+        "id, name, created_at, exams:exams(id, subject_id, paper, mcq, essay, total, completion, created_at, updated_at)"
+      )
+      .order("created_at", { ascending: true });
+
+    if (error) {
+      console.error(error);
+      setError(error.message);
+      setSubjects([]);
+      return;
+    }
+
+    const mapped: Subject[] = (data ?? []).map((subject) => ({
+      id: subject.id,
+      name: subject.name,
+      exams: (subject.exams ?? []).map((exam) => ({
+        id: exam.id,
+        paper: exam.paper,
+        mcq: Number(exam.mcq ?? 0),
+        essay: Number(exam.essay ?? 0),
+        total: Number(exam.total ?? 0),
+        completion: Number(exam.completion ?? 0)
+      }))
+    }));
+
+    setSubjects(mapped);
+    setActiveSubjectId((previous) => {
+      if (previous && mapped.some((subject) => subject.id === previous)) {
+        return previous;
+      }
+      return mapped[0]?.id ?? null;
+    });
+  }, []);
+
+  const loadFocusEntries = useCallback(async () => {
+    if (!isSupabaseConfigured) {
+      setFocusEntries([]);
+      return;
+    }
+    setError(null);
+    const cutoff = new Date(Date.now() - HISTORY_LIMIT_DAYS * 24 * 60 * 60 * 1000).toISOString();
+    const { data, error } = await supabase
+      .from("focus_entries")
+      .select("id, duration, started_at")
+      .gte("started_at", cutoff)
+      .order("started_at", { ascending: true });
+
+    if (error) {
+      console.error(error);
+      setError(error.message);
+      setFocusEntries([]);
+      return;
+    }
+
+    const mapped: FocusEntry[] = (data ?? []).map((entry) => ({
+      id: entry.id,
+      duration: Number(entry.duration ?? 0),
+      timestamp: entry.started_at ?? new Date().toISOString()
+    }));
+
+    setFocusEntries(mapped);
+  }, []);
+
+  const refreshAll = useCallback(async () => {
+    setIsLoading(true);
+    await Promise.all([loadSubjects(), loadFocusEntries()]);
+    setIsLoading(false);
+  }, [loadSubjects, loadFocusEntries]);
+
+  useEffect(() => {
+    refreshAll();
+  }, [refreshAll]);
+
   const recordFocusSession = useCallback(
-    (duration: number) => {
-      const timestamp = new Date().toISOString();
-      const cutoff = Date.now() - HISTORY_LIMIT_DAYS * 24 * 60 * 60 * 1000;
-
-      updateState((current) => {
-        const filteredEntries = current.productivity.focusEntries.filter((entry) => {
-          const entryTime = Date.parse(entry.timestamp);
-          return !Number.isNaN(entryTime) && entryTime >= cutoff;
-        });
-
-        return {
-          ...current,
-          productivity: {
-            focusEntries: [
-              ...filteredEntries,
-              {
-                id: createId("focus"),
-                timestamp,
-                duration
-              }
-            ]
-          }
-        };
+    async (duration: number) => {
+      if (!isSupabaseConfigured) {
+        setError("Supabase environment variables are missing.");
+        return;
+      }
+      const { error } = await supabase.from("focus_entries").insert({
+        duration,
+        started_at: new Date().toISOString()
       });
+
+      if (error) {
+        console.error(error);
+        setError(error.message);
+        return;
+      }
+
+      await loadFocusEntries();
     },
-    [updateState]
+    [loadFocusEntries]
   );
 
   useEffect(() => {
     setForm(createEmptyForm());
     setEditingId(null);
     setEditForm(createEmptyForm());
-  }, [state.activeSubjectId]);
+  }, [activeSubjectId]);
 
   useEffect(() => {
     if (!timerOpen) {
@@ -681,7 +450,7 @@ function App() {
     if (secondsLeft <= 0) {
       setIsRunning(false);
       if (sessionType === "focus") {
-        recordFocusSession(sessionDuration);
+        recordFocusSession(sessionDuration).catch((err) => console.error(err));
       }
       const nextSession = sessionType === "focus" ? "break" : "focus";
       setSessionType(nextSession);
@@ -835,41 +604,66 @@ function App() {
     };
   }, [exams, activeSubject?.id, activeSubject?.name]);
 
+  if (!isSupabaseConfigured) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-slate-100 px-6 text-center text-slate-600">
+        <h1 className="text-2xl font-semibold text-slate-800">Supabase not configured</h1>
+        <p className="max-w-md text-sm">
+          Add <code className="rounded bg-slate-900/10 px-1 py-0.5">VITE_SUPABASE_URL</code> and
+          <code className="rounded bg-slate-900/10 px-1 py-0.5">VITE_SUPABASE_ANON_KEY</code> to your <code>.env</code> file, then restart <code>bun run dev</code>.
+        </p>
+      </div>
+    );
+  }
+
+  if (isLoading && subjects.length === 0) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-100 text-slate-500">
+        Loading dashboard…
+      </div>
+    );
+  }
+
   const handleInputChange = (event: ChangeEvent<HTMLInputElement>) => {
     const { name, value } = event.target;
     setForm((prev) => ({ ...prev, [name]: value }));
   };
 
-  const handleAddExam = (event: FormEvent<HTMLFormElement>) => {
+  const handleAddExam = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const payload = prepareExamPayload(form);
     if (!payload) {
       return;
     }
 
-    const id =
-      typeof crypto !== "undefined" && "randomUUID" in crypto
-        ? crypto.randomUUID()
-        : `exam-${Date.now()}`;
-
-    const newExam: ExamEntry = {
-      id,
-      ...payload
-    };
-
     if (!activeSubject) {
       return;
     }
 
-    updateState((current) => ({
-      ...current,
-      subjects: current.subjects.map((subject) =>
-        subject.id === activeSubject.id
-          ? { ...subject, exams: [newExam, ...subject.exams] }
-          : subject
-      )
-    }));
+    if (!isSupabaseConfigured) {
+      setError("Supabase environment variables are missing.");
+      return;
+    }
+
+    const { error } = await supabase.from("exams").insert({
+      subject_id: activeSubject.id,
+      paper: payload.paper,
+      mcq: payload.mcq,
+      essay: payload.essay,
+      total: payload.total,
+      completion: payload.completion
+    });
+
+    if (error) {
+      console.error(error);
+      setError(error.message);
+      return;
+    }
+
     setForm(createEmptyForm());
+    setIsLoading(true);
+    await loadSubjects();
+    setIsLoading(false);
   };
 
   const handleClearForm = () => setForm(createEmptyForm());
@@ -896,7 +690,7 @@ function App() {
     setEditForm((prev) => ({ ...prev, [name]: value }));
   };
 
-  const handleUpdateExam = (event: FormEvent<HTMLFormElement>) => {
+  const handleUpdateExam = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!editingId) {
       return;
@@ -907,27 +701,26 @@ function App() {
       return;
     }
 
-    if (!activeSubject) {
-      setEditingId(null);
-      setEditForm(createEmptyForm());
+    const { error } = await supabase
+      .from("exams")
+      .update({
+        paper: payload.paper,
+        mcq: payload.mcq,
+        essay: payload.essay,
+        total: payload.total,
+        completion: payload.completion
+      })
+      .eq("id", editingId);
+
+    if (error) {
+      console.error(error);
+      setError(error.message);
       return;
     }
 
-    updateState((current) => ({
-      ...current,
-      subjects: current.subjects.map((subject) => {
-        if (subject.id !== activeSubject.id) {
-          return subject;
-        }
-
-        return {
-          ...subject,
-          exams: subject.exams.map((exam) =>
-            exam.id === editingId ? { ...exam, ...payload } : exam
-          )
-        };
-      })
-    }));
+    setIsLoading(true);
+    await loadSubjects();
+    setIsLoading(false);
     setEditingId(null);
     setEditForm(createEmptyForm());
   };
@@ -953,38 +746,35 @@ function App() {
       description: `Remove "${examToDelete.paper}" from ${activeSubject.name}?`,
       confirmLabel: "Delete",
       tone: "danger",
-      onConfirm: () => {
-        updateState((current) => ({
-          ...current,
-          subjects: current.subjects.map((subject) =>
-            subject.id === subjectId
-              ? { ...subject, exams: subject.exams.filter((exam) => exam.id !== id) }
-              : subject
-          )
-        }));
+      onConfirm: async () => {
+        setIsLoading(true);
+        if (!isSupabaseConfigured) {
+          setError("Supabase environment variables are missing.");
+          setIsLoading(false);
+          return;
+        }
+
+        const { error } = await supabase.from("exams").delete().eq("id", id);
+        if (error) {
+          console.error(error);
+          setError(error.message);
+          setIsLoading(false);
+          return;
+        }
+
         if (editingId === id) {
           setEditingId(null);
           setEditForm(createEmptyForm());
         }
+
+        await loadSubjects();
+        setIsLoading(false);
       }
     });
   };
 
   const handleSubjectSelect = (subjectId: string) => {
-    updateState((current) => {
-      if (current.activeSubjectId === subjectId) {
-        return current;
-      }
-
-      if (!current.subjects.some((subject) => subject.id === subjectId)) {
-        return current;
-      }
-
-      return {
-        ...current,
-        activeSubjectId: subjectId
-      };
-    });
+    setActiveSubjectId(subjectId);
   };
 
   const handleToggleSubjectForm = () => {
@@ -992,29 +782,39 @@ function App() {
     setNewSubjectName("");
   };
 
-  const handleCreateSubject = (event: FormEvent<HTMLFormElement>) => {
+  const handleCreateSubject = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const name = newSubjectName.trim();
     if (!name) {
       return;
     }
 
-    const subjectId = createId("subject");
+    setIsLoading(true);
 
-    updateState((current) => ({
-      subjects: [
-        ...current.subjects,
-        {
-          id: subjectId,
-          name,
-          exams: []
-        }
-      ],
-      activeSubjectId: subjectId
-    }));
+    if (!isSupabaseConfigured) {
+      setError("Supabase environment variables are missing.");
+      setIsLoading(false);
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from("subjects")
+      .insert({ name })
+      .select("id")
+      .single();
+
+    if (error) {
+      console.error(error);
+      setError(error.message);
+      setIsLoading(false);
+      return;
+    }
 
     setNewSubjectName("");
     setIsAddingSubject(false);
+    await loadSubjects();
+    setActiveSubjectId(data?.id ?? null);
+    setIsLoading(false);
   };
 
   const handleSubjectNameChange = (event: ChangeEvent<HTMLInputElement>) => {
@@ -1034,39 +834,27 @@ function App() {
       description: `Delete "${subjectName}" and all associated papers?`,
       confirmLabel: "Delete",
       tone: "danger",
-      onConfirm: () => {
-        updateState((current) => {
-          if (!current.subjects.some((subject) => subject.id === subjectId)) {
-            return current;
-          }
+      onConfirm: async () => {
+        setIsLoading(true);
+        if (!isSupabaseConfigured) {
+          setError("Supabase environment variables are missing.");
+          setIsLoading(false);
+          return;
+        }
 
-          const remaining = current.subjects.filter((subject) => subject.id !== subjectId);
-
-          if (remaining.length === 0) {
-            const fallbackId = createId("subject");
-            return {
-              ...current,
-              subjects: [
-                {
-                  id: fallbackId,
-                  name: "New Subject",
-                  exams: []
-                }
-              ],
-              activeSubjectId: fallbackId
-            };
-          }
-
-          return {
-            ...current,
-            subjects: remaining,
-            activeSubjectId: remaining[0].id
-          };
-        });
+        const { error } = await supabase.from("subjects").delete().eq("id", subjectId);
+        if (error) {
+          console.error(error);
+          setError(error.message);
+          setIsLoading(false);
+          return;
+        }
 
         setIsAddingSubject(false);
         setNewSubjectName("");
         setLibraryOpen(false);
+        await loadSubjects();
+        setIsLoading(false);
       }
     });
   };
@@ -1118,10 +906,10 @@ function App() {
     setSecondsLeft(FOCUS_DURATION);
   };
 
-  const handleSkipSession = () => {
+  const handleSkipSession = async () => {
     const sessionDuration = sessionType === "focus" ? FOCUS_DURATION : BREAK_DURATION;
     if (sessionType === "focus") {
-      recordFocusSession(sessionDuration);
+      await recordFocusSession(sessionDuration);
     }
 
     const nextSession = sessionType === "focus" ? "break" : "focus";
@@ -1138,6 +926,18 @@ function App() {
 
   return (
     <>
+      {error && (
+        <div className="fixed left-1/2 top-6 z-[60] w-[90vw] max-w-xl -translate-x-1/2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-center text-sm font-medium text-rose-600 shadow-lg shadow-rose-200/50">
+          {error}
+        </div>
+      )}
+
+      {isLoading && subjects.length > 0 && (
+        <div className="fixed left-1/2 top-20 z-[55] -translate-x-1/2 rounded-full bg-slate-900 text-white px-4 py-2 text-xs font-semibold tracking-[0.3em] shadow-lg shadow-slate-900/30">
+          SYNCING…
+        </div>
+      )}
+
       {libraryOpen && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 backdrop-blur-sm px-4 py-10"
@@ -1318,7 +1118,7 @@ function App() {
                 })
               ) : (
                 <div className="rounded-2xl border border-dashed border-slate-200 bg-white/60 p-12 text-center text-sm text-slate-500">
-                  Save a paper to populate this list.
+                  No records yet.
                 </div>
               )}
             </div>
@@ -1712,9 +1512,7 @@ function App() {
                       </div>
                     ))
                   ) : (
-                    <p className="text-sm text-slate-500">
-                      Add papers to see how your completion percentage stacks up.
-                    </p>
+                    <p className="text-sm text-slate-500">No records yet.</p>
                   )}
                   {progressData.length > 0 && (
                     <Button className="w-full">Why these colors?</Button>
@@ -1779,9 +1577,7 @@ function App() {
                         );
                       })
                     ) : (
-                      <p className="text-sm text-slate-500">
-                        Save a paper above to populate your recap board.
-                      </p>
+                      <p className="text-sm text-slate-500">No records yet.</p>
                     )}
                   </div>
                 </CardContent>
@@ -1907,93 +1703,278 @@ function PomodoroTimer({
   };
 
   return (
-    <div className="fixed bottom-12 left-[128px] z-40">
-      <div className="glass-panel relative w-[320px] space-y-5 rounded-3xl bg-white/85 p-6 shadow-[0_30px_60px_rgba(15,23,42,0.25)]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/20 px-4 py-10 backdrop-blur-sm">
+      <div className="glass-panel relative flex w-full max-w-5xl flex-col gap-10 rounded-[32px] bg-white/90 p-10 shadow-[0_40px_90px_rgba(15,23,42,0.25)]">
         <button
           type="button"
-          className="absolute right-4 top-4 rounded-full bg-white/70 p-1.5 text-slate-400 transition hover:text-slate-600"
+          className="absolute right-8 top-8 rounded-full bg-white/70 p-2 text-slate-400 transition hover:text-slate-600"
           onClick={onClose}
           aria-label="Close Pomodoro timer"
         >
-          <X className="h-4 w-4" />
+          <X className="h-5 w-5" />
         </button>
 
-        <div className="space-y-2">
-          <p className="text-xs uppercase tracking-[0.35em] text-slate-400">Pomodoro</p>
-          <h3 className="text-xl font-semibold text-slate-900">{sessionType === "focus" ? "Focus Sprint" : "Break Time"}</h3>
-          <p className="text-xs text-slate-500">
-            Completed cycles today: <span className="font-semibold text-slate-700">{todaysPomodoros}</span>
-          </p>
-        </div>
+        <div className="flex flex-col gap-8 lg:grid lg:grid-cols-[2fr,1fr] lg:items-start lg:gap-12">
+          <div className="space-y-8">
+            <div className="space-y-3">
+              <p className="text-sm uppercase tracking-[0.45em] text-slate-400">Pomodoro</p>
+              <h3 className="text-3xl font-semibold text-slate-900 md:text-4xl">
+                {sessionType === "focus" ? "Focus Sprint" : "Break Time"}
+              </h3>
+              <p className="text-sm text-slate-500">
+                {todaysPomodoros > 0 ? (
+                  <>
+                    Completed cycles today:
+                    <span className="ml-1 font-semibold text-slate-700">{todaysPomodoros}</span>
+                  </>
+                ) : (
+                  "No records yet."
+                )}
+              </p>
+            </div>
 
-        <div className="flex items-center justify-between rounded-2xl bg-white/70 px-4 py-3 shadow-inner shadow-white/60">
-          <button
-            type="button"
-            className={cn(
-              "rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em]",
-              sessionType === "focus"
-                ? "bg-slate-900 text-white shadow-[0_12px_25px_rgba(15,23,42,0.25)]"
-                : "bg-transparent text-slate-500 hover:text-slate-700"
-            )}
-            onClick={() => onSelectSession("focus")}
-          >
-            Focus
-          </button>
-          <span className="text-lg font-semibold text-slate-900">{formatTime(secondsLeft)}</span>
-          <button
-            type="button"
-            className={cn(
-              "rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em]",
-              sessionType === "break"
-                ? "bg-emerald-500 text-white shadow-[0_12px_25px_rgba(16,185,129,0.35)]"
-                : "bg-transparent text-slate-500 hover:text-slate-700"
-            )}
-            onClick={() => onSelectSession("break")}
-          >
-            Break
-          </button>
-        </div>
+            <div className="grid gap-6 rounded-[28px] bg-gradient-to-br from-slate-900 to-slate-700 p-8 text-white shadow-[0_25px_60px_rgba(15,23,42,0.45)] md:grid-cols-[auto,1fr] md:items-center">
+              <div className="flex flex-col items-center gap-4 md:items-start">
+                <div className="flex items-center gap-3 rounded-full bg-white/10 px-4 py-2">
+                  <button
+                    type="button"
+                    className={cn(
+                      "rounded-full px-4 py-1 text-xs font-semibold uppercase tracking-[0.35em] transition",
+                      sessionType === "focus"
+                        ? "bg-white text-slate-900 shadow-[0_16px_30px_rgba(255,255,255,0.25)]"
+                        : "text-white/70 hover:text-white"
+                    )}
+                    onClick={() => onSelectSession("focus")}
+                  >
+                    Focus
+                  </button>
+                  <button
+                    type="button"
+                    className={cn(
+                      "rounded-full px-4 py-1 text-xs font-semibold uppercase tracking-[0.35em] transition",
+                      sessionType === "break"
+                        ? "bg-emerald-400 text-slate-900 shadow-[0_16px_30px_rgba(16,185,129,0.35)]"
+                        : "text-white/70 hover:text-white"
+                    )}
+                    onClick={() => onSelectSession("break")}
+                  >
+                    Break
+                  </button>
+                </div>
+                <span className="text-[72px] font-bold leading-none tracking-tight md:text-[96px]">
+                  {formatTime(secondsLeft)}
+                </span>
+              </div>
+              <div className="flex flex-col justify-between gap-6 md:gap-10">
+                <Progress
+                  value={progress}
+                  className="h-5 w-full rounded-full bg-white/20"
+                  indicatorClassName={cn(
+                    "rounded-full bg-gradient-to-r",
+                    sessionType === "focus"
+                      ? "from-white via-brand-primary to-brand-secondary"
+                      : "from-emerald-300 via-emerald-400 to-teal-300"
+                  )}
+                />
+                <div className="grid gap-3 text-sm text-white/70 sm:grid-cols-2">
+                  <div className="rounded-2xl bg-white/10 p-4">
+                    <p className="text-xs uppercase tracking-[0.35em] text-white/60">Total Duration</p>
+                    <p className="mt-2 text-2xl font-semibold text-white">
+                      {sessionType === "focus" ? `${FOCUS_DURATION / 60} min` : `${BREAK_DURATION / 60} min`}
+                    </p>
+                  </div>
+                  <div className="rounded-2xl bg-white/10 p-4">
+                    <p className="text-xs uppercase tracking-[0.35em] text-white/60">Remaining</p>
+                    <p className="mt-2 text-2xl font-semibold text-white">{Math.ceil(secondsLeft / 60)} min</p>
+                  </div>
+                </div>
+              </div>
+            </div>
 
-        <Progress
-          value={progress}
-          className="h-3 bg-white/60"
-          indicatorClassName={cn(
-            "bg-gradient-to-r",
-            sessionType === "focus"
-              ? "from-slate-900 via-brand-primary to-brand-secondary"
-              : "from-emerald-400 via-emerald-500 to-teal-500"
-          )}
-        />
+            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  className="flex items-center gap-3 rounded-full bg-slate-900 px-6 py-3 text-base font-semibold text-white shadow-[0_25px_40px_rgba(15,23,42,0.35)] transition hover:bg-slate-800"
+                  onClick={onStartPause}
+                >
+                  {isRunning ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5" />} {isRunning ? "Pause" : "Start"}
+                </button>
+                <button
+                  type="button"
+                  className="flex items-center gap-2 rounded-full bg-white px-4 py-3 text-sm font-semibold text-slate-600 shadow-[0_18px_35px_rgba(148,163,184,0.35)] transition hover:text-slate-800"
+                  onClick={onReset}
+                  aria-label="Reset timer"
+                >
+                  <RotateCcw className="h-4 w-4" />
+                  Reset
+                </button>
+                <button
+                  type="button"
+                  className="flex items-center gap-2 rounded-full bg-white px-4 py-3 text-sm font-semibold text-slate-600 shadow-[0_18px_35px_rgba(148,163,184,0.35)] transition hover:text-slate-800"
+                  onClick={onSkip}
+                  aria-label="Skip session"
+                >
+                  <SkipForward className="h-4 w-4" />
+                  Skip
+                </button>
+              </div>
+              <p className="text-xs uppercase tracking-[0.35em] text-slate-400">
+                Focus more to unlock productivity milestones.
+              </p>
+            </div>
+          </div>
 
-        <div className="flex items-center justify-between gap-3">
-          <button
-            type="button"
-            className="flex items-center gap-2 rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-[0_18px_30px_rgba(15,23,42,0.25)] transition hover:bg-slate-800"
-            onClick={onStartPause}
-          >
-            {isRunning ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />} {isRunning ? "Pause" : "Start"}
-          </button>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              className="rounded-full bg-white/80 p-2 text-slate-500 transition hover:text-slate-700"
-              onClick={onSkip}
-              aria-label="Skip session"
-            >
-              <SkipForward className="h-4 w-4" />
-            </button>
-            <button
-              type="button"
-              className="rounded-full bg-white/80 p-2 text-slate-500 transition hover:text-slate-700"
-              onClick={onReset}
-              aria-label="Reset timer"
-            >
-              <RotateCcw className="h-4 w-4" />
-            </button>
+          <div className="space-y-6 rounded-[28px] bg-white/70 p-6 shadow-[0_20px_45px_rgba(15,23,42,0.15)]">
+            <div>
+              <p className="text-xs uppercase tracking-[0.35em] text-slate-400">Today&apos;s Focus</p>
+              <p className="mt-3 text-3xl font-semibold text-slate-900">{todaysPomodoros}</p>
+              <p className="text-sm text-slate-500">
+                {todaysPomodoros === 1 ? "Pomodoro logged" : "Pomodoros logged"} in the current cycle.
+              </p>
+            </div>
+            <div className="space-y-4">
+              <div className="flex items-center gap-3 rounded-2xl bg-white/80 px-4 py-3">
+                <span className="h-10 w-10 rounded-full bg-slate-900/90 text-white shadow-[0_15px_35px_rgba(15,23,42,0.35)]">
+                  <Play className="m-auto h-4 w-4" />
+                </span>
+                <div>
+                  <p className="text-sm font-semibold text-slate-900">Stay in the zone</p>
+                  <p className="text-xs text-slate-500">
+                    Keep your streak alive with consistent focus sessions and mindful breaks.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 rounded-2xl bg-white/80 px-4 py-3">
+                <span className="h-10 w-10 rounded-full bg-emerald-500/90 text-white shadow-[0_15px_35px_rgba(16,185,129,0.45)]">
+                  <Pause className="m-auto h-4 w-4" />
+                </span>
+                <div>
+                  <p className="text-sm font-semibold text-slate-900">Recover intentionally</p>
+                  <p className="text-xs text-slate-500">
+                    Breaks help consolidate learning—switch sessions when you need to refresh.
+                  </p>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
     </div>
+  );
+}
+
+type FocusLineChartProps = {
+  points: { label: string; totalSeconds: number }[];
+  targetSeconds: number;
+};
+
+function FocusLineChart({ points, targetSeconds }: FocusLineChartProps) {
+  const gradientId = `${useId()}-focus-line`;
+  const width = 320;
+  const height = 160;
+  const paddingX = 28;
+  const paddingY = 28;
+  const horizontalSpace = width - paddingX * 2;
+  const verticalSpace = height - paddingY * 2;
+  const maxValue = Math.max(targetSeconds, ...points.map((point) => point.totalSeconds), 1);
+
+  const coordinates = points.map((point, index) => {
+    const ratio = points.length === 1 ? 0.5 : index / (points.length - 1);
+    const x = paddingX + ratio * horizontalSpace;
+    const y = height - paddingY - (point.totalSeconds / maxValue) * verticalSpace;
+    return { ...point, x, y };
+  });
+
+  const linePath = coordinates
+    .map((coord, index) => `${index === 0 ? "M" : "L"}${coord.x},${coord.y}`)
+    .join(" ");
+  const areaPath = coordinates.length
+    ? `${linePath} L${coordinates[coordinates.length - 1].x},${height - paddingY} L${coordinates[0].x},${height - paddingY} Z`
+    : "";
+
+  const targetY = height - paddingY - (targetSeconds / maxValue) * verticalSpace;
+
+  return (
+    <svg viewBox={`0 0 ${width} ${height}`} className="h-36 w-full">
+      <defs>
+        <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#4C6ED7" stopOpacity="0.4" />
+          <stop offset="100%" stopColor="#4C6ED7" stopOpacity="0" />
+        </linearGradient>
+      </defs>
+
+      {[0.25, 0.5, 0.75, 1].map((fraction) => {
+        const y = paddingY + fraction * verticalSpace;
+        const labelSeconds = Math.max(0, Math.round((1 - fraction) * maxValue));
+        return (
+          <g key={fraction}>
+            <line
+              x1={paddingX}
+              x2={width - paddingX}
+              y1={y}
+              y2={y}
+              stroke="rgba(148,163,184,0.3)"
+              strokeDasharray="4 6"
+            />
+            <text
+              x={paddingX - 8}
+              y={y - 4}
+              textAnchor="end"
+              fontSize={10}
+              fill="rgba(100,116,139,0.7)"
+            >
+              {formatDuration(labelSeconds)}
+            </text>
+          </g>
+        );
+      })}
+
+      <line
+        x1={paddingX}
+        x2={width - paddingX}
+        y1={targetY}
+        y2={targetY}
+        stroke="rgba(244,63,94,0.45)"
+        strokeDasharray="6 6"
+      />
+      <text
+        x={width - paddingX}
+        y={targetY - 6}
+        textAnchor="end"
+        fontSize={10}
+        fill="rgba(244,63,94,0.8)"
+      >
+        Target
+      </text>
+
+      {areaPath && <path d={areaPath} fill={`url(#${gradientId})`} />}
+      {linePath && <path d={linePath} fill="none" stroke="#4C6ED7" strokeWidth={3} strokeLinecap="round" />}
+
+      {coordinates.map((coord) => (
+        <g key={`${coord.label}-${coord.x}`}>
+          <circle cx={coord.x} cy={coord.y} r={4} fill="#4C6ED7" />
+          <text
+            x={coord.x}
+            y={coord.y - 8}
+            fontSize={10}
+            textAnchor="middle"
+            fill="rgba(76,110,215,0.85)"
+          >
+            {formatDuration(coord.totalSeconds)}
+          </text>
+          <text
+            x={coord.x}
+            y={height - paddingY + 16}
+            fontSize={10}
+            textAnchor="middle"
+            fill="rgba(100,116,139,0.8)"
+          >
+            {coord.label}
+          </text>
+        </g>
+      ))}
+    </svg>
   );
 }
 
@@ -2029,6 +2010,8 @@ function ProductivityPanel({
     background: `conic-gradient(#4C6ED7 ${focusPercentage}%, rgba(226,232,240,0.95) ${focusPercentage}% 100%)`
   };
   const remainingSeconds = Math.max(0, targetSeconds - totalSeconds);
+  const chartPoints = view === "week" ? weekBreakdown : view === "month" ? monthBreakdown : [];
+  const hasChartData = chartPoints.some((point) => point.totalSeconds > 0);
 
   const viewTabs: Array<{ value: "day" | "week" | "month"; label: string }> = [
     { value: "day", label: "Day" },
@@ -2103,26 +2086,55 @@ function ProductivityPanel({
           })}
         </div>
 
-        <div className="flex items-center gap-6">
-          <div className="relative h-32 w-32 rounded-full" style={pieStyle}>
-            <div className="absolute inset-[12%] rounded-full bg-white/90 shadow-inner shadow-white/70" />
-            <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-              <span className="text-sm font-semibold text-slate-500">Focus</span>
-              <span className="text-lg font-semibold text-slate-900">{formatDuration(totalSeconds)}</span>
+        {view === "day" ? (
+          <div className="flex items-center gap-6">
+            <div className="relative h-32 w-32 rounded-full" style={pieStyle}>
+              <div className="absolute inset-[12%] rounded-full bg-white/90 shadow-inner shadow-white/70" />
+              <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
+                <span className="text-sm font-semibold text-slate-500">Focus</span>
+                <span className="text-lg font-semibold text-slate-900">{formatDuration(totalSeconds)}</span>
+              </div>
+            </div>
+            <div className="flex-1 space-y-2 text-sm text-slate-600">
+              <p>
+                Total: <span className="font-semibold text-slate-900">{formatDuration(totalSeconds)}</span>
+              </p>
+              <p>
+                Target: <span className="font-semibold text-slate-900">{formatDuration(targetSeconds)}</span>
+              </p>
+              <p>
+                Remaining: <span className="font-semibold text-slate-900">{formatDuration(remainingSeconds)}</span>
+              </p>
+              <p>
+                Completion: <span className="font-semibold text-slate-900">{focusPercentage.toFixed(0)}%</span>
+              </p>
             </div>
           </div>
-          <div className="flex-1 space-y-2 text-sm text-slate-600">
-            <p>
-              Target: <span className="font-semibold text-slate-900">{formatDuration(targetSeconds)}</span>
-            </p>
-            <p>
-              Remaining: <span className="font-semibold text-slate-900">{formatDuration(remainingSeconds)}</span>
-            </p>
-            <p>
-              Completion: <span className="font-semibold text-slate-900">{focusPercentage.toFixed(0)}%</span>
-            </p>
+        ) : (
+          <div className="space-y-3">
+            {chartPoints.length > 0 && hasChartData ? (
+              <FocusLineChart points={chartPoints} targetSeconds={targetSeconds} />
+            ) : (
+              <div className="flex h-36 w-full items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-white/60 text-sm text-slate-500">
+                No records yet.
+              </div>
+            )}
+            <div className="flex flex-wrap gap-4 text-sm text-slate-600">
+              <p>
+                Total: <span className="font-semibold text-slate-900">{formatDuration(totalSeconds)}</span>
+              </p>
+              <p>
+                Target: <span className="font-semibold text-slate-900">{formatDuration(targetSeconds)}</span>
+              </p>
+              <p>
+                Remaining: <span className="font-semibold text-slate-900">{formatDuration(remainingSeconds)}</span>
+              </p>
+              <p>
+                Completion: <span className="font-semibold text-slate-900">{focusPercentage.toFixed(0)}%</span>
+              </p>
+            </div>
           </div>
-        </div>
+        )}
 
         <div className="space-y-3">
           <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
@@ -2141,7 +2153,7 @@ function ProductivityPanel({
               ))}
             </ul>
           ) : (
-            <p className="text-xs text-slate-500">Complete a focus session to populate this view.</p>
+            <p className="text-xs text-slate-500">No records yet.</p>
           )}
         </div>
       </div>
@@ -2150,7 +2162,7 @@ function ProductivityPanel({
 }
 
 type ConfirmDialogProps = ConfirmDialogConfig & {
-  onConfirm: () => void;
+  onConfirm: () => void | Promise<void>;
   onCancel: () => void;
 };
 
