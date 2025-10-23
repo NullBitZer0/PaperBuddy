@@ -1,21 +1,36 @@
-# Bun Package Manager
+# Marks Analyze Dashboard
 
-This project is configured to use Bun as the package manager.
+A responsive React + TypeScript dashboard inspired by the provided UI reference. The layout is built with Tailwind CSS and lightweight shadcn-style components.
 
 ## Prerequisites
-- Install Bun: https://bun.sh
-- Bun version 1.1.0 or newer is recommended.
+- Bun `>=1.1.0` (https://bun.sh)
+- Node-compatible tooling for optional editor integrations
 
-## Install dependencies
+## Install
 ```sh
 bun install
 ```
 
-## Build
+## Development
 ```sh
-bun run build
+bun run dev
 ```
 
-## Notes
-- The `package.json` field `packageManager` is set to `bun@^1.1.0` and `engines.bun` is `>=1.1.0`.
-- If you previously used another package manager, remove any old lockfiles (e.g., `package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`) to avoid confusion.
+## Build & Preview
+```sh
+bun run build
+bun run preview
+```
+
+## Tech Stack
+- React 18 + Vite 5
+- TypeScript
+- Tailwind CSS with shadcn-inspired UI primitives
+- Lucide icons for the sidebar and metrics
+- Local storage persistence for paper records
+- Multi-subject dashboards with isolated paper archives
+
+## Manage Papers
+- Use the Book icon in the sidebar to open the paper library overlay.
+- Add new entries from the dashboard card, then edit or delete them inline; all changes persist in local storage.
+- Add subjects (e.g., Maths, Biology) from the subject switcher and swap between them to view dedicated analytics per subject.
