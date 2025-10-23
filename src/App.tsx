@@ -11,6 +11,7 @@ import {
   Play,
   Plus,
   RotateCcw,
+  ShieldCheck,
   Settings,
   SkipForward,
   Trash2,
@@ -28,6 +29,7 @@ import {
   useState
 } from "react";
 
+import type { Session, User } from "@supabase/supabase-js";
 import { GiPanda } from "react-icons/gi";
 import { Avatar, AvatarFallback, AvatarImage } from "./components/ui/avatar";
 import { Badge } from "./components/ui/badge";
@@ -322,6 +324,17 @@ function LineChart({ data }: { data: ExamScore[] }) {
 }
 
 function App() {
+  const [session, setSession] = useState<Session | null>(null);
+  const [user, setUser] = useState<User | null>(null);
+  const [isAuthLoading, setIsAuthLoading] = useState<boolean>(true);
+  const [authView, setAuthView] = useState<"sign-in" | "sign-up">("sign-in");
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+  const [authConfirmPassword, setAuthConfirmPassword] = useState("");
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [authMessage, setAuthMessage] = useState<string | null>(null);
+  const [isSubmittingAuth, setIsSubmittingAuth] = useState(false);
+
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [activeSubjectId, setActiveSubjectId] = useState<string | null>(null);
   const [focusEntries, setFocusEntries] = useState<FocusEntry[]>([]);
@@ -342,10 +355,45 @@ function App() {
   const [productivityView, setProductivityView] = useState<"day" | "week" | "month">("day");
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogConfig | null>(null);
 
+  useEffect(() => {
+    if (!isSupabaseConfigured) {
+      setIsAuthLoading(false);
+      return;
+    }
+
+    let isMounted = true;
+
+    void supabase.auth.getSession().then(({ data }) => {
+      if (!isMounted) {
+        return;
+      }
+      setSession(data.session);
+      setUser(data.session?.user ?? null);
+      setIsAuthLoading(false);
+    });
+
+    const { data: authListener } = supabase.auth.onAuthStateChange((_event, newSession) => {
+      setSession(newSession);
+      setUser(newSession?.user ?? null);
+      setIsAuthLoading(false);
+    });
+
+    return () => {
+      isMounted = false;
+      authListener.subscription.unsubscribe();
+    };
+  }, []);
+
   const activeSubject = subjects.find((subject) => subject.id === activeSubjectId) ?? subjects[0];
   const exams = activeSubject?.exams ?? [];
 
   const loadSubjects = useCallback(async () => {
+    if (!user) {
+      setSubjects([]);
+      setActiveSubjectId(null);
+      return;
+    }
+
     if (!isSupabaseConfigured) {
       setSubjects([]);
       setActiveSubjectId(null);
@@ -357,6 +405,7 @@ function App() {
       .select(
         "id, name, created_at, exams:exams(id, subject_id, paper, mcq, essay, total, completion, created_at, updated_at)"
       )
+      .eq("user_id", user.id)
       .order("created_at", { ascending: true });
 
     if (error) {
@@ -386,9 +435,14 @@ function App() {
       }
       return mapped[0]?.id ?? null;
     });
-  }, []);
+  }, [user]);
 
   const loadFocusEntries = useCallback(async () => {
+    if (!user) {
+      setFocusEntries([]);
+      return;
+    }
+
     if (!isSupabaseConfigured) {
       setFocusEntries([]);
       return;
@@ -398,6 +452,7 @@ function App() {
     const { data, error } = await supabase
       .from("focus_entries")
       .select("id, duration, started_at")
+      .eq("user_id", user.id)
       .gte("started_at", cutoff)
       .order("started_at", { ascending: true });
 
@@ -415,27 +470,47 @@ function App() {
     }));
 
     setFocusEntries(mapped);
-  }, []);
+  }, [user]);
 
   const refreshAll = useCallback(async () => {
+    if (!user || !isSupabaseConfigured) {
+      setSubjects([]);
+      setFocusEntries([]);
+      setIsLoading(false);
+      return;
+    }
+
     setIsLoading(true);
     await Promise.all([loadSubjects(), loadFocusEntries()]);
     setIsLoading(false);
-  }, [loadSubjects, loadFocusEntries]);
+  }, [user, loadSubjects, loadFocusEntries]);
 
   useEffect(() => {
     refreshAll();
   }, [refreshAll]);
 
+  useEffect(() => {
+    setAuthError(null);
+    setAuthMessage(null);
+    setAuthPassword("");
+    setAuthConfirmPassword("");
+  }, [authView]);
+
   const recordFocusSession = useCallback(
     async (duration: number) => {
+      if (!user) {
+        setError("You must be signed in to record focus sessions.");
+        return;
+      }
+
       if (!isSupabaseConfigured) {
         setError("Supabase environment variables are missing.");
         return;
       }
       const { error } = await supabase.from("focus_entries").insert({
         duration,
-        started_at: new Date().toISOString()
+        started_at: new Date().toISOString(),
+        user_id: user.id
       });
 
       if (error) {
@@ -446,7 +521,7 @@ function App() {
 
       await loadFocusEntries();
     },
-    [loadFocusEntries]
+    [loadFocusEntries, user]
   );
 
   useEffect(() => {
@@ -661,6 +736,11 @@ function App() {
       return;
     }
 
+    if (!user) {
+      setError("You must be signed in to add a paper.");
+      return;
+    }
+
     if (!isSupabaseConfigured) {
       setError("Supabase environment variables are missing.");
       return;
@@ -668,6 +748,7 @@ function App() {
 
     const { error } = await supabase.from("exams").insert({
       subject_id: activeSubject.id,
+      user_id: user.id,
       paper: payload.paper,
       mcq: payload.mcq,
       essay: payload.essay,
@@ -722,6 +803,11 @@ function App() {
       return;
     }
 
+    if (!user) {
+      setError("You must be signed in to update a paper.");
+      return;
+    }
+
     const { error } = await supabase
       .from("exams")
       .update({
@@ -731,7 +817,8 @@ function App() {
         total: payload.total,
         completion: payload.completion
       })
-      .eq("id", editingId);
+      .eq("id", editingId)
+      .eq("user_id", user.id);
 
     if (error) {
       console.error(error);
@@ -756,6 +843,11 @@ function App() {
       return;
     }
 
+    if (!user) {
+      setError("You must be signed in to delete a paper.");
+      return;
+    }
+
     const subjectId = activeSubject.id;
     const examToDelete = activeSubject.exams.find((exam) => exam.id === id);
     if (!examToDelete) {
@@ -775,7 +867,7 @@ function App() {
           return;
         }
 
-        const { error } = await supabase.from("exams").delete().eq("id", id);
+        const { error } = await supabase.from("exams").delete().eq("id", id).eq("user_id", user.id);
         if (error) {
           console.error(error);
           setError(error.message);
@@ -812,6 +904,12 @@ function App() {
 
     setIsLoading(true);
 
+    if (!user) {
+      setError("You must be signed in to create a subject.");
+      setIsLoading(false);
+      return;
+    }
+
     if (!isSupabaseConfigured) {
       setError("Supabase environment variables are missing.");
       setIsLoading(false);
@@ -820,7 +918,7 @@ function App() {
 
     const { data, error } = await supabase
       .from("subjects")
-      .insert({ name })
+      .insert({ name, user_id: user.id })
       .select("id")
       .single();
 
@@ -847,6 +945,11 @@ function App() {
       return;
     }
 
+    if (!user) {
+      setError("You must be signed in to delete a subject.");
+      return;
+    }
+
     const subjectId = activeSubject.id;
     const subjectName = activeSubject.name;
 
@@ -863,7 +966,11 @@ function App() {
           return;
         }
 
-        const { error } = await supabase.from("subjects").delete().eq("id", subjectId);
+        const { error } = await supabase
+          .from("subjects")
+          .delete()
+          .eq("id", subjectId)
+          .eq("user_id", user.id);
         if (error) {
           console.error(error);
           setError(error.message);
