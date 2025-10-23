@@ -155,3 +155,65 @@ on public.focus_entries
 for all
 using (user_id = auth.uid())
 with check (user_id = auth.uid());
+
+-- Announcements broadcast to all users, authored by admins
+create table if not exists public.announcements (
+  id uuid primary key default gen_random_uuid(),
+  title text not null,
+  description text not null,
+  created_by uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists announcements_created_at_idx on public.announcements(created_at desc);
+
+alter table public.announcements enable row level security;
+
+create policy "Announcements are readable by everyone"
+on public.announcements
+for select
+using (true);
+
+create policy "Announcements can be inserted by admins"
+on public.announcements
+for insert
+with check (
+  exists (
+    select 1
+    from public.profiles p
+    where p.id = auth.uid()
+      and p.role = 'admin'
+  )
+);
+
+create policy "Announcements can be deleted by admins"
+on public.announcements
+for delete
+using (
+  exists (
+    select 1
+    from public.profiles p
+    where p.id = auth.uid()
+      and p.role = 'admin'
+  )
+);
+
+create policy "Announcements can be updated by admins"
+on public.announcements
+for update
+using (
+  exists (
+    select 1
+    from public.profiles p
+    where p.id = auth.uid()
+      and p.role = 'admin'
+  )
+)
+with check (
+  exists (
+    select 1
+    from public.profiles p
+    where p.id = auth.uid()
+      and p.role = 'admin'
+  )
+);

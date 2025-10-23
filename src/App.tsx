@@ -102,6 +102,22 @@ type SupabaseFocusEntryRow = {
   started_at: string | null;
 };
 
+type SupabaseAnnouncementRow = {
+  id: string;
+  title: string | null;
+  description: string | null;
+  created_by: string | null;
+  created_at: string | null;
+};
+
+type Announcement = {
+  id: string;
+  title: string;
+  description: string;
+  createdBy: string | null;
+  createdAt: string;
+};
+
 type ProductivityState = {
   focusEntries: FocusEntry[];
 };
@@ -156,6 +172,17 @@ function formatDuration(seconds: number): string {
   }
   parts.push(`${minutes}m`);
   return parts.join(" ");
+}
+
+function formatTimestampLabel(isoString: string): string {
+  const date = new Date(isoString);
+  if (Number.isNaN(date.getTime())) {
+    return isoString;
+  }
+  return date.toLocaleString(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short"
+  });
 }
 
 const sidebarItems = [
@@ -335,10 +362,14 @@ function App() {
   const [emailToastDismissed, setEmailToastDismissed] = useState(false);
   const [emailToastMessage, setEmailToastMessage] = useState<string | null>(null);
   const [isResendingEmail, setIsResendingEmail] = useState(false);
+  const [profileRole, setProfileRole] = useState<string | null>(null);
+  const [profileName, setProfileName] = useState<string | null>(null);
+  const [isProfileLoading, setIsProfileLoading] = useState<boolean>(false);
 
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [activeSubjectId, setActiveSubjectId] = useState<string | null>(null);
   const [focusEntries, setFocusEntries] = useState<FocusEntry[]>([]);
+  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -355,6 +386,12 @@ function App() {
   const [productivityOpen, setProductivityOpen] = useState(false);
   const [productivityView, setProductivityView] = useState<"day" | "week" | "month">("day");
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogConfig | null>(null);
+  const [announcementPanelOpen, setAnnouncementPanelOpen] = useState(false);
+  const [announcementModalOpen, setAnnouncementModalOpen] = useState(false);
+  const [announcementTitle, setAnnouncementTitle] = useState("");
+  const [announcementDescription, setAnnouncementDescription] = useState("");
+  const [announcementError, setAnnouncementError] = useState<string | null>(null);
+  const [isSendingAnnouncement, setIsSendingAnnouncement] = useState(false);
 
   useEffect(() => {
     if (!isSupabaseConfigured) {
@@ -390,6 +427,8 @@ function App() {
       setShowEmailToast(false);
       setEmailToastDismissed(false);
       setEmailToastMessage(null);
+      setAnnouncementPanelOpen(false);
+      setAnnouncementModalOpen(false);
       return;
     }
 
@@ -399,6 +438,68 @@ function App() {
       setShowEmailToast(false);
     }
   }, [user, emailToastDismissed]);
+
+  useEffect(() => {
+    if (!user || !isSupabaseConfigured) {
+      setProfileRole(null);
+      setProfileName(null);
+      setIsProfileLoading(false);
+      return;
+    }
+
+    let isMounted = true;
+
+    const fetchProfile = async () => {
+      setIsProfileLoading(true);
+      try {
+        const { data, error } = await supabase
+          .from("profiles")
+          .select("role, full_name")
+          .eq("id", user.id)
+          .maybeSingle();
+
+        if (!isMounted) {
+          return;
+        }
+
+        if (error) {
+          console.error(error);
+          setProfileRole(null);
+          setProfileName(null);
+          return;
+        }
+
+        const nextRole =
+          typeof data?.role === "string" && data.role.trim().length > 0
+            ? data.role.trim()
+            : "student";
+        setProfileRole(nextRole);
+
+        const nextName =
+          typeof data?.full_name === "string" && data.full_name.trim().length > 0
+            ? data.full_name.trim()
+            : null;
+        setProfileName(nextName);
+      } catch (profileError) {
+        if (!isMounted) {
+          return;
+        }
+        console.error(profileError);
+        setProfileRole(null);
+        setProfileName(null);
+      } finally {
+        if (isMounted) {
+          setIsProfileLoading(false);
+        }
+      }
+    };
+
+    void fetchProfile();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [user, isSupabaseConfigured]);
 
   const activeSubject = subjects.find((subject) => subject.id === activeSubjectId) ?? subjects[0];
   const exams = activeSubject?.exams ?? [];
@@ -488,6 +589,63 @@ function App() {
     setFocusEntries(mapped);
   }, [user]);
 
+  const loadAnnouncements = useCallback(async () => {
+    if (!isSupabaseConfigured) {
+      return;
+    }
+
+    const { data, error: announcementsError } = await supabase
+      .from("announcements")
+      .select("id, title, description, created_by, created_at")
+      .order("created_at", { ascending: false })
+      .limit(20);
+
+    if (announcementsError) {
+      if ((announcementsError as { code?: string }).code === "42P01") {
+        console.warn(
+          "Announcements table missing. Run schema migration in supabase/schema.sql to enable announcements."
+        );
+      } else {
+        console.error(announcementsError);
+      }
+      setAnnouncements([]);
+      return;
+    }
+
+    const mapped: Announcement[] = (data ?? []).map(
+      (row: SupabaseAnnouncementRow): Announcement => ({
+        id: row.id,
+        title: (row.title ?? "").trim() || "Untitled announcement",
+        description: (row.description ?? "").trim(),
+        createdBy: row.created_by,
+        createdAt: row.created_at ?? new Date().toISOString()
+      })
+    );
+
+    setAnnouncements(mapped);
+  }, [isSupabaseConfigured]);
+
+  useEffect(() => {
+    if (!isSupabaseConfigured) {
+      return;
+    }
+
+    const channel = supabase
+      .channel("public:announcements")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "announcements" },
+        () => {
+          void loadAnnouncements();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      void channel.unsubscribe();
+    };
+  }, [isSupabaseConfigured, loadAnnouncements]);
+
   const refreshAll = useCallback(async () => {
     if (!user || !isSupabaseConfigured) {
       setSubjects([]);
@@ -497,9 +655,9 @@ function App() {
     }
 
     setIsLoading(true);
-    await Promise.all([loadSubjects(), loadFocusEntries()]);
+    await Promise.all([loadSubjects(), loadFocusEntries(), loadAnnouncements()]);
     setIsLoading(false);
-  }, [user, loadSubjects, loadFocusEntries]);
+  }, [user, loadSubjects, loadFocusEntries, loadAnnouncements]);
 
   useEffect(() => {
     refreshAll();
@@ -692,6 +850,89 @@ function App() {
 
   const examSummaries = useMemo(() => exams.slice(0, 4), [exams]);
 
+  const adminStats = useMemo(() => {
+    const totalSubjectsCount = subjects.length;
+    const totalExamsCount = subjects.reduce(
+      (accumulator, subject) => accumulator + subject.exams.length,
+      0
+    );
+    const totalFocusSecondsCount = focusEntries.reduce(
+      (accumulator, entry) => accumulator + Math.max(0, entry.duration),
+      0
+    );
+    const totalFocusMinutesCount = Math.round(totalFocusSecondsCount / 60);
+    const recentEntries = [...focusEntries]
+      .sort(
+        (a, b) =>
+          new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+      )
+      .slice(0, 5);
+    const subjectBreakdown = subjects.map((subject) => {
+      const examCount = subject.exams.length;
+      const completionAverage =
+        examCount === 0
+          ? 0
+          : Math.round(
+              subject.exams.reduce(
+                (accumulator, exam) =>
+                  accumulator + Math.max(0, Math.min(100, exam.completion)),
+                0
+              ) / examCount
+            );
+      return {
+        id: subject.id,
+        name: subject.name,
+        examCount,
+        completionAverage
+      };
+    });
+
+    return {
+      totals: {
+        subjects: totalSubjectsCount,
+        exams: totalExamsCount,
+        focusSessions: focusEntries.length,
+        focusMinutes: totalFocusMinutesCount
+      },
+      recentEntries,
+      subjectBreakdown
+    };
+  }, [subjects, focusEntries]);
+
+  const adminSummaryCards = useMemo(
+    () => [
+      {
+        label: "Subjects tracked",
+        value: adminStats.totals.subjects,
+        hint: "Total subjects created by learners",
+        icon: Layers,
+        gradient: "from-sky-400 via-sky-500 to-blue-600"
+      },
+      {
+        label: "Papers logged",
+        value: adminStats.totals.exams,
+        hint: "All exams recorded across subjects",
+        icon: BookOpen,
+        gradient: "from-emerald-400 via-emerald-500 to-teal-500"
+      },
+      {
+        label: "Focus sessions",
+        value: adminStats.totals.focusSessions,
+        hint: "Completed Pomodoro runs",
+        icon: Clock,
+        gradient: "from-amber-400 via-amber-500 to-orange-500"
+      },
+      {
+        label: "Focus minutes",
+        value: adminStats.totals.focusMinutes,
+        hint: "Total recorded study minutes",
+        icon: ChartBar,
+        gradient: "from-fuchsia-400 via-purple-500 to-purple-600"
+      }
+    ],
+    [adminStats]
+  );
+
   const isSignUp = authView === "sign-up";
   const displayName = useMemo(() => {
     if (!user) {
@@ -716,7 +957,10 @@ function App() {
 
   const avatarUrl = (user?.user_metadata?.avatar_url as string | undefined) ?? "";
   const userEmail = user?.email ?? "";
-  const accountName = displayName || userEmail || "Paper Buddy user";
+  const accountName =
+    profileName ?? (displayName || userEmail || "Paper Buddy user");
+  const normalizedRole = profileRole?.toLowerCase() ?? "student";
+  const isAdmin = normalizedRole === "admin";
 
   const handleAuthEmailChange = (event: ChangeEvent<HTMLInputElement>) => {
     setAuthEmail(event.target.value);
@@ -828,10 +1072,13 @@ function App() {
       }
       setSubjects([]);
       setFocusEntries([]);
+      setAnnouncements([]);
       setActiveSubjectId(null);
       setLibraryOpen(false);
       setTimerOpen(false);
       setProductivityOpen(false);
+      setAnnouncementPanelOpen(false);
+      setAnnouncementModalOpen(false);
       setIsLoading(false);
     } catch (signOutError) {
       setError(
@@ -1030,6 +1277,15 @@ function App() {
           </Card>
         </div>
       </div>
+    );
+  }
+
+  if (isProfileLoading) {
+    return (
+      <AnimatedLoadingScreen
+        headline="Loading profile"
+        subtext="Fetching your permissions and preferences..."
+      />
     );
   }
 
@@ -1314,11 +1570,77 @@ function App() {
     });
   };
 
+  const resetAnnouncementForm = () => {
+    setAnnouncementTitle("");
+    setAnnouncementDescription("");
+    setAnnouncementError(null);
+  };
+
+  const openAnnouncementModal = () => {
+    resetAnnouncementForm();
+    setAnnouncementPanelOpen(false);
+    setAnnouncementModalOpen(true);
+  };
+
+  const closeAnnouncementModal = () => {
+    setAnnouncementModalOpen(false);
+    setAnnouncementError(null);
+  };
+
+  const handleAnnouncementSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const title = announcementTitle.trim();
+    const description = announcementDescription.trim();
+
+    if (!title) {
+      setAnnouncementError("Title is required.");
+      return;
+    }
+
+    if (!description) {
+      setAnnouncementError("Description is required.");
+      return;
+    }
+
+    if (!isSupabaseConfigured) {
+      setAnnouncementError("Supabase environment variables are missing.");
+      return;
+    }
+
+    if (!user) {
+      setAnnouncementError("You must be signed in to send announcements.");
+      return;
+    }
+
+    setAnnouncementError(null);
+    setIsSendingAnnouncement(true);
+
+    const { error: announcementInsertError } = await supabase.from("announcements").insert({
+      title,
+      description,
+      created_by: user.id
+    });
+
+    if (announcementInsertError) {
+      console.error(announcementInsertError);
+      setAnnouncementError(announcementInsertError.message);
+      setIsSendingAnnouncement(false);
+      return;
+    }
+
+    resetAnnouncementForm();
+    setIsSendingAnnouncement(false);
+    setAnnouncementModalOpen(false);
+    await loadAnnouncements();
+    setAnnouncementPanelOpen(true);
+  };
+
   const handleSidebarClick = (label: string) => {
     if (label === "Papers") {
       setLibraryOpen(true);
       setTimerOpen(false);
       setProductivityOpen(false);
+      setAnnouncementPanelOpen(false);
       return;
     }
 
@@ -1328,6 +1650,7 @@ function App() {
         if (next) {
           setLibraryOpen(false);
           setProductivityOpen(false);
+          setAnnouncementPanelOpen(false);
         }
         return next;
       });
@@ -1341,10 +1664,23 @@ function App() {
           setLibraryOpen(false);
           setTimerOpen(false);
           setProductivityView("day");
+          setAnnouncementPanelOpen(false);
         }
         return next;
       });
     }
+  };
+
+  const handleToggleAnnouncements = () => {
+    setAnnouncementPanelOpen((previous) => {
+      const next = !previous;
+      if (next) {
+        setLibraryOpen(false);
+        setTimerOpen(false);
+        setProductivityOpen(false);
+      }
+      return next;
+    });
   };
 
   const handleCloseTimer = () => {
@@ -1393,7 +1729,7 @@ function App() {
         </div>
       )}
 
-      {libraryOpen && (
+      {!isAdmin && libraryOpen && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 backdrop-blur-sm px-4 py-10"
           onClick={handleOverlayClick}
@@ -1567,6 +1903,83 @@ function App() {
           </div>
         </div>
       )}
+      {isAdmin && announcementModalOpen && (
+        <div
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/60 px-4 py-10 backdrop-blur"
+          onClick={(event) => {
+            if (event.target === event.currentTarget && !isSendingAnnouncement) {
+              closeAnnouncementModal();
+            }
+          }}
+        >
+          <div className="glass-panel w-full max-w-xl rounded-3xl border border-white/70 bg-white/90 p-6 shadow-[0_35px_70px_rgba(15,23,42,0.35)]">
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Announcement</p>
+                <h2 className="text-2xl font-semibold text-slate-900">Send an update</h2>
+                <p className="text-xs text-slate-500">
+                  Title and description will appear instantly in everyone&apos;s notifications.
+                </p>
+              </div>
+              <button
+                type="button"
+                className="rounded-full bg-white/80 p-2 text-slate-500 transition hover:text-slate-700"
+                onClick={closeAnnouncementModal}
+                disabled={isSendingAnnouncement}
+                aria-label="Close announcement modal"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            {announcementError && (
+              <div className="mb-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-600">
+                {announcementError}
+              </div>
+            )}
+            <form className="space-y-4" onSubmit={handleAnnouncementSubmit}>
+              <div className="space-y-2">
+                <Label htmlFor="announcement-title">Title</Label>
+                <Input
+                  id="announcement-title"
+                  name="title"
+                  placeholder="Maintenance window tonight"
+                  value={announcementTitle}
+                  onChange={(event) => setAnnouncementTitle(event.target.value)}
+                  required
+                  disabled={isSendingAnnouncement}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="announcement-description">Description</Label>
+                <textarea
+                  id="announcement-description"
+                  name="description"
+                  placeholder="We will be upgrading servers from 10pm to 11pm. Expect brief downtime."
+                  value={announcementDescription}
+                  onChange={(event) => setAnnouncementDescription(event.target.value)}
+                  className="min-h-[140px] w-full rounded-2xl border border-slate-200 bg-white/80 px-4 py-3 text-sm text-slate-700 outline-none transition focus:border-brand-primary focus:ring-2 focus:ring-brand-primary/30"
+                  required
+                  disabled={isSendingAnnouncement}
+                />
+              </div>
+              <div className="flex items-center justify-end gap-3">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={closeAnnouncementModal}
+                  disabled={isSendingAnnouncement}
+                  className="bg-white/80 text-slate-600 hover:bg-white"
+                >
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={isSendingAnnouncement}>
+                  {isSendingAnnouncement ? "Sending..." : "Send"}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
       <div className="min-h-screen px-4 pb-10 pt-8 md:px-8">
         <div className="mx-auto flex max-w-[1280px] gap-6">
           <aside className="glass-panel hidden w-[96px] flex-col items-center justify-between py-6 lg:flex">
@@ -1606,23 +2019,31 @@ function App() {
           </aside>
 
         <div className="flex-1 space-y-6">
+          <div className="relative">
           <header className="glass-panel flex flex-col gap-5 px-6 py-6 md:flex-row md:items-center md:justify-between md:px-10">
             <div className="flex items-start gap-4">
               <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-900 text-white shadow-[0_12px_30px_rgba(15,23,42,0.25)]">
                 <GiPanda className="h-7 w-7" />
               </div>
               <div className="space-y-1">
-
                 <h1 className="text-2xl font-semibold text-slate-900 md:text-3xl">
-                  PAPER BUDDY
+                  {isAdmin ? "Admin Console" : "PAPER BUDDY"}
                 </h1>
-                <div className="inline-flex items-center gap-2 rounded-full bg-white/80 px-3 py-1 text-xs font-medium text-slate-600 shadow-inner shadow-white/40">
-                  <Layers className="h-3.5 w-3.5 text-slate-500" />
-                  <span>{activeSubject ? activeSubject.name : "Add a subject"}</span>
-                </div>
-                <p className="text-sm text-slate-500">
-                  Track your exam performance and spot winning insights in seconds.
-                </p>
+                {isAdmin ? (
+                  <p className="text-sm text-slate-500">
+                    Monitor global subjects, paper submissions, and focus activity in real time.
+                  </p>
+                ) : (
+                  <>
+                    <div className="inline-flex items-center gap-2 rounded-full bg-white/80 px-3 py-1 text-xs font-medium text-slate-600 shadow-inner shadow-white/40">
+                      <Layers className="h-3.5 w-3.5 text-slate-500" />
+                      <span>{activeSubject ? activeSubject.name : "Add a subject"}</span>
+                    </div>
+                    <p className="text-sm text-slate-500">
+                      Track your exam performance and spot winning insights in seconds.
+                    </p>
+                  </>
+                )}
               </div>
             </div>
 
@@ -1630,13 +2051,20 @@ function App() {
               <Separator className="hidden h-10 w-px md:block" />
               <button
                 type="button"
-                className="relative rounded-full bg-white/80 p-2 text-slate-500 transition hover:text-slate-700"
-                aria-label="Notifications"
+                className={cn(
+                  "relative rounded-full bg-white/80 p-2 transition",
+                  announcementPanelOpen ? "text-rose-600" : "text-slate-500 hover:text-slate-700"
+                )}
+                aria-label="Announcements"
+                aria-pressed={announcementPanelOpen}
+                onClick={handleToggleAnnouncements}
               >
                 <Bell className="h-5 w-5" />
-                <span className="absolute -right-0.5 -top-0.5 inline-flex h-3.5 w-3.5 items-center justify-center rounded-full bg-rose-500 text-[9px] font-bold text-white">
-                  3
-                </span>
+                {announcements.length > 0 ? (
+                  <span className="absolute -right-0.5 -top-0.5 inline-flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-rose-500 px-1 text-[9px] font-bold leading-none text-white">
+                    {announcements.length > 9 ? "9+" : announcements.length}
+                  </span>
+                ) : null}
               </button>
               <div className="glass-panel flex flex-wrap items-center gap-3 px-4 py-2">
                 <div className="flex items-center gap-3">
@@ -1653,6 +2081,11 @@ function App() {
                     </p>
                   </div>
                 </div>
+                {isAdmin ? (
+                  <Badge className="ml-auto bg-rose-500/15 text-rose-600">
+                    Admin
+                  </Badge>
+                ) : null}
                 {/*<Button*/}
                 {/*  type="button"*/}
                 {/*  variant="ghost"*/}
@@ -1667,8 +2100,170 @@ function App() {
               </div>
             </div>
           </header>
+          {announcementPanelOpen && (
+            <div className="absolute right-0 top-full z-30 mt-3 w-full max-w-sm rounded-2xl border border-slate-200/70 bg-white/95 p-4 text-slate-700 shadow-[0_20px_45px_rgba(15,23,42,0.25)]">
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Announcements</p>
+                  <h3 className="text-lg font-semibold text-slate-900">Latest updates</h3>
+                </div>
+                <button
+                  type="button"
+                  className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.3em] text-slate-500 transition hover:bg-slate-200"
+                  onClick={() => setAnnouncementPanelOpen(false)}
+                >
+                  Close
+                </button>
+              </div>
+              <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
+                {announcements.length > 0 ? (
+                  announcements.map((announcement) => (
+                    <div
+                      key={announcement.id}
+                      className="rounded-xl border border-slate-200/70 bg-white/90 px-4 py-3 shadow-[0_8px_20px_rgba(15,23,42,0.08)]"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <h4 className="text-sm font-semibold text-slate-900">{announcement.title}</h4>
+                        <span className="text-[10px] uppercase tracking-[0.3em] text-slate-400">
+                          {formatTimestampLabel(announcement.createdAt)}
+                        </span>
+                      </div>
+                      <p className="mt-2 text-xs text-slate-500 leading-relaxed">
+                        {announcement.description}
+                      </p>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-sm text-slate-500">No announcements yet.</p>
+                )}
+              </div>
+            </div>
+          )}
+          </div>
+          {isAdmin && (
+            <div className="space-y-6">
+              <div className="glass-panel flex flex-wrap items-center justify-between gap-3 px-6 py-4">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Broadcast</p>
+                  <h2 className="text-base font-semibold text-slate-900">Share an announcement</h2>
+                  <p className="text-xs text-slate-500">
+                    Send a quick update that appears in every learner&apos;s notification center.
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={openAnnouncementModal}
+                  className="rounded-full px-5"
+                >
+                  Announcement
+                </Button>
+              </div>
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                {adminSummaryCards.map(({ label, value, hint, icon: Icon, gradient }) => (
+                  <Card key={label} className="relative overflow-hidden text-white">
+                    <div className={`absolute inset-0 -z-10 bg-gradient-to-br ${gradient}`} />
+                    <CardHeader className="relative flex flex-row items-start justify-between text-white">
+                      <div>
+                        <p className="text-xs uppercase tracking-[0.3em] text-white/70">{label}</p>
+                        <CardTitle className="mt-2 text-3xl font-semibold text-white">
+                          {value.toLocaleString()}
+                        </CardTitle>
+                      </div>
+                      <Icon className="h-10 w-10 text-white/70" />
+                    </CardHeader>
+                    <CardContent className="relative pt-0">
+                      <p className="text-sm text-white/80">{hint}</p>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
 
-          <div className="glass-panel flex flex-col gap-4 px-6 py-6 md:px-10">
+              <Card className="relative overflow-hidden">
+                <CardHeader>
+                  <Badge className="bg-slate-900/10 text-slate-700">Subject performance</Badge>
+                  <CardTitle className="text-2xl text-slate-900">Subject overview</CardTitle>
+                  <CardDescription>
+                    Review subject-level adoption and average completion across the workspace.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {adminStats.subjectBreakdown.length > 0 ? (
+                    <div className="overflow-hidden rounded-2xl border border-slate-200/60">
+                      <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
+                        <thead className="bg-slate-50/80 text-slate-500">
+                          <tr>
+                            <th scope="col" className="px-4 py-3 font-medium uppercase tracking-[0.2em]">
+                              Subject
+                            </th>
+                            <th scope="col" className="px-4 py-3 font-medium uppercase tracking-[0.2em]">
+                              Papers
+                            </th>
+                            <th scope="col" className="px-4 py-3 font-medium uppercase tracking-[0.2em]">
+                              Avg completion
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-200/60 bg-white/80 text-slate-600">
+                          {adminStats.subjectBreakdown.map((subject) => (
+                            <tr key={subject.id} className="transition hover:bg-slate-100/60">
+                              <td className="px-4 py-3 font-semibold text-slate-900">{subject.name}</td>
+                              <td className="px-4 py-3">{subject.examCount.toLocaleString()}</td>
+                              <td className="px-4 py-3">{subject.completionAverage}%</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-slate-500">
+                      No subjects have been created yet. Once learners add subjects, you'll see them here.
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card className="relative overflow-hidden">
+                <CardHeader className="flex flex-col gap-3">
+                  <Badge className="bg-brand-primary/10 text-brand-primary">Recent focus</Badge>
+                  <CardTitle className="text-2xl text-slate-900">Latest focus sessions</CardTitle>
+                  <CardDescription>
+                    Monitor the most recent Pomodoro sessions recorded across the workspace.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {adminStats.recentEntries.length > 0 ? (
+                    <div className="grid gap-3">
+                      {adminStats.recentEntries.map((entry) => (
+                        <div
+                          key={entry.id}
+                          className="flex items-center justify-between rounded-2xl bg-white/80 px-4 py-3 shadow-sm"
+                        >
+                          <div>
+                            <p className="text-sm font-semibold text-slate-800">
+                              {formatTimestampLabel(entry.timestamp)}
+                            </p>
+                            <p className="text-xs text-slate-500">Focus session logged</p>
+                          </div>
+                          <span className="rounded-full bg-slate-900/90 px-3 py-1 text-xs font-semibold uppercase tracking-[0.3em] text-white">
+                            {formatDuration(entry.duration)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-slate-500">
+                      No focus activity yet. When learners complete Pomodoro sessions they will surface here.
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+          {!isAdmin && (
+            <>
+              <div className="glass-panel flex flex-col gap-4 px-6 py-6 md:px-10">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="space-y-1">
                 <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Subjects</p>
@@ -2029,6 +2624,8 @@ function App() {
               </Card>
             </section>
           </main>
+            </>
+          )}
         </div>
       </div>
 
@@ -2039,7 +2636,7 @@ function App() {
       </footer>
     </div>
 
-      {productivityOpen && (
+      {!isAdmin && productivityOpen && (
         <ProductivityPanel
           onClose={() => setProductivityOpen(false)}
           view={productivityView}
@@ -2055,7 +2652,7 @@ function App() {
         />
       )}
 
-      {timerOpen && (
+      {!isAdmin && timerOpen && (
         <PomodoroTimer
           onClose={handleCloseTimer}
           sessionType={sessionType}
