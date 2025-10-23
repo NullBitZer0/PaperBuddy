@@ -27,12 +27,12 @@ bun run preview
 - TypeScript
 - Tailwind CSS with shadcn-inspired UI primitives
 - Lucide icons for the sidebar and metrics
-- Local storage persistence for paper records
+- Supabase for persisted subjects/exams/focus sessions
 - Multi-subject dashboards with isolated paper archives
 
 ## Manage Papers
 - Use the Book icon in the sidebar to open the paper library overlay.
-- Add new entries from the dashboard card, then edit or delete them inline; all changes persist in local storage.
+- Add new entries from the dashboard card, then edit or delete them inline; all changes persist to Supabase.
 - Add subjects (e.g., Maths, Biology) from the subject switcher and swap between them to view dedicated analytics per subject.
 
 ## Focus Timer & Analytics
@@ -50,4 +50,4 @@ bun run preview
 4. Restart the dev server (`bun run dev`) so Vite picks up the new environment variables.
 5. (Optional but recommended) In Supabase dashboard, enable Email confirmations under **Authentication → Providers** so users receive the verification email that the in-app toast references.
 
-> **Note:** Row Level Security is commented inside `supabase/schema.sql`. Enable it and write policies once you introduce authentication.
+> **Note:** `supabase/schema.sql` enables row-level security for profiles, subjects, exams, and focus entries. Tweak the policies if you need broader access (e.g., admin dashboards).
