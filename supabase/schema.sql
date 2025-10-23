@@ -4,6 +4,7 @@ create extension if not exists "pgcrypto";
 -- Subjects group the exam dashboards
 create table if not exists public.subjects (
   id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
   name text not null,
   created_at timestamptz not null default now()
 );
@@ -12,6 +13,7 @@ create table if not exists public.subjects (
 create table if not exists public.exams (
   id uuid primary key default gen_random_uuid(),
   subject_id uuid not null references public.subjects(id) on delete cascade,
+  user_id uuid not null references auth.users(id) on delete cascade,
   paper text not null,
   mcq numeric default 0,
   essay numeric default 0,
@@ -38,12 +40,79 @@ for each row execute procedure public.set_updated_at();
 -- Logged focus sessions generated from the Pomodoro timer
 create table if not exists public.focus_entries (
   id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
   duration integer not null,
   started_at timestamptz not null default now()
 );
 
+create index if not exists subjects_user_id_idx on public.subjects(user_id);
+create index if not exists exams_user_id_idx on public.exams(user_id);
+create index if not exists focus_entries_user_id_idx on public.focus_entries(user_id);
+
+-- Auto-assign the authenticated user's id when records are created
+create or replace function public.set_current_user()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if new.user_id is null then
+    new.user_id := auth.uid();
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists subjects_set_current_user on public.subjects;
+create trigger subjects_set_current_user
+before insert on public.subjects
+for each row execute procedure public.set_current_user();
+
+drop trigger if exists exams_set_current_user on public.exams;
+create trigger exams_set_current_user
+before insert on public.exams
+for each row execute procedure public.set_current_user();
+
+drop trigger if exists focus_entries_set_current_user on public.focus_entries;
+create trigger focus_entries_set_current_user
+before insert on public.focus_entries
+for each row execute procedure public.set_current_user();
+
 -- Example RLS configuration (optional)
--- Row Level Security can be enabled when you introduce authentication.
--- alter table public.subjects enable row level security;
--- alter table public.exams enable row level security;
--- alter table public.focus_entries enable row level security;
+alter table public.subjects enable row level security;
+alter table public.exams enable row level security;
+alter table public.focus_entries enable row level security;
+
+create policy "Subjects are viewable by owner"
+on public.subjects
+for select
+using (user_id = auth.uid());
+
+create policy "Subjects are managed by owner"
+on public.subjects
+for all
+using (user_id = auth.uid())
+with check (user_id = auth.uid());
+
+create policy "Exams are viewable by owner"
+on public.exams
+for select
+using (user_id = auth.uid());
+
+create policy "Exams are managed by owner"
+on public.exams
+for all
+using (user_id = auth.uid())
+with check (user_id = auth.uid());
+
+create policy "Focus entries are viewable by owner"
+on public.focus_entries
+for select
+using (user_id = auth.uid());
+
+create policy "Focus entries are managed by owner"
+on public.focus_entries
+for all
+using (user_id = auth.uid())
+with check (user_id = auth.uid());

@@ -40,6 +40,7 @@ import { Label } from "./components/ui/label";
 import { Progress } from "./components/ui/progress";
 import { Separator } from "./components/ui/separator";
 import { cn } from "./lib/utils";
+import { Toast } from "./components/ui/toast";
 import { supabase, isSupabaseConfigured } from "./lib/supabaseClient";
 
 type ExamScore = {
@@ -62,7 +63,6 @@ type ExamFormState = {
   paper: string;
   mcq: string;
   essay: string;
-  total: string;
   completion: string;
 };
 
@@ -184,7 +184,6 @@ const createEmptyForm = (): ExamFormState => ({
   paper: "",
   mcq: "",
   essay: "",
-  total: "",
   completion: ""
 });
 
@@ -196,13 +195,11 @@ function prepareExamPayload(form: ExamFormState): ExamPayload | null {
 
   const mcqValue = Number(form.mcq);
   const essayValue = Number(form.essay);
-  const totalInput = form.total ? Number(form.total) : mcqValue + essayValue;
   const completionValue = Number(form.completion);
 
   const mcq = Number.isFinite(mcqValue) ? Math.max(0, mcqValue) : 0;
   const essay = Number.isFinite(essayValue) ? Math.max(0, essayValue) : 0;
-  const totalCandidate = Number.isFinite(totalInput) ? totalInput : mcq + essay;
-  const total = Math.max(0, totalCandidate);
+  const total = Math.max(0, mcq + essay);
   const completion = Number.isFinite(completionValue)
     ? Math.min(100, Math.max(0, completionValue))
     : 0;
@@ -221,7 +218,6 @@ function examToForm(exam: ExamEntry): ExamFormState {
     paper: exam.paper,
     mcq: exam.mcq.toString(),
     essay: exam.essay.toString(),
-    total: exam.total.toString(),
     completion: exam.completion.toString()
   };
 }
@@ -334,6 +330,10 @@ function App() {
   const [authError, setAuthError] = useState<string | null>(null);
   const [authMessage, setAuthMessage] = useState<string | null>(null);
   const [isSubmittingAuth, setIsSubmittingAuth] = useState(false);
+  const [showEmailToast, setShowEmailToast] = useState(false);
+  const [emailToastDismissed, setEmailToastDismissed] = useState(false);
+  const [emailToastMessage, setEmailToastMessage] = useState<string | null>(null);
+  const [isResendingEmail, setIsResendingEmail] = useState(false);
 
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [activeSubjectId, setActiveSubjectId] = useState<string | null>(null);
@@ -383,6 +383,21 @@ function App() {
       authListener.subscription.unsubscribe();
     };
   }, []);
+
+  useEffect(() => {
+    if (!user) {
+      setShowEmailToast(false);
+      setEmailToastDismissed(false);
+      setEmailToastMessage(null);
+      return;
+    }
+
+    if (!user.email_confirmed_at && !emailToastDismissed) {
+      setShowEmailToast(true);
+    } else {
+      setShowEmailToast(false);
+    }
+  }, [user, emailToastDismissed]);
 
   const activeSubject = subjects.find((subject) => subject.id === activeSubjectId) ?? subjects[0];
   const exams = activeSubject?.exams ?? [];
@@ -676,6 +691,155 @@ function App() {
 
   const examSummaries = useMemo(() => exams.slice(0, 4), [exams]);
 
+  const isSignUp = authView === "sign-up";
+  const displayName = useMemo(() => {
+    if (!user) {
+      return "";
+    }
+    const metadataName = typeof user.user_metadata?.full_name === "string" ? user.user_metadata.full_name.trim() : "";
+    if (metadataName) {
+      return metadataName;
+    }
+    return user.email ?? "";
+  }, [user]);
+
+  const userInitials = useMemo(() => {
+    if (!user) {
+      return "PB";
+    }
+    const base = displayName || user.email || "PB";
+    const parts = base.split(/[\s@._-]+/).filter(Boolean);
+    const letters = parts.map((part) => (part[0] ?? "").toUpperCase()).join("");
+    return (letters || "PB").slice(0, 2);
+  }, [displayName, user]);
+
+  const avatarUrl = (user?.user_metadata?.avatar_url as string | undefined) ?? "";
+  const userEmail = user?.email ?? "";
+  const accountName = displayName || userEmail || "Paper Buddy user";
+
+  const handleAuthEmailChange = (event: ChangeEvent<HTMLInputElement>) => {
+    setAuthEmail(event.target.value);
+  };
+
+  const handleAuthPasswordChange = (event: ChangeEvent<HTMLInputElement>) => {
+    setAuthPassword(event.target.value);
+  };
+
+  const handleAuthConfirmPasswordChange = (event: ChangeEvent<HTMLInputElement>) => {
+    setAuthConfirmPassword(event.target.value);
+  };
+
+  const toggleAuthView = () => {
+    setAuthView((previous) => (previous === "sign-in" ? "sign-up" : "sign-in"));
+  };
+
+  const handleAuthSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (!isSupabaseConfigured) {
+      setAuthError("Supabase environment variables are missing.");
+      return;
+    }
+
+    const email = authEmail.trim().toLowerCase();
+    const password = authPassword;
+    const confirmPassword = authConfirmPassword;
+
+    if (!email) {
+      setAuthError("Enter your email address.");
+      return;
+    }
+
+    if (!password) {
+      setAuthError("Enter your password.");
+      return;
+    }
+
+    setAuthError(null);
+    setAuthMessage(null);
+    setIsSubmittingAuth(true);
+
+    if (authView === "sign-up") {
+      if (password.length < 8) {
+        setAuthError("Password must be at least 8 characters long.");
+        setIsSubmittingAuth(false);
+        return;
+      }
+
+      if (password !== confirmPassword) {
+        setAuthError("Passwords do not match.");
+        setIsSubmittingAuth(false);
+        return;
+      }
+
+      try {
+        const { error } = await supabase.auth.signUp({
+          email,
+          password
+        });
+
+        if (error) {
+          setAuthError(error.message);
+        } else {
+          setAuthMessage("Check your email inbox to confirm your account, then sign in.");
+          setAuthView("sign-in");
+        }
+      } catch (signUpError) {
+        setAuthError(
+          signUpError instanceof Error ? signUpError.message : "Unable to sign up. Try again."
+        );
+      } finally {
+        setIsSubmittingAuth(false);
+      }
+
+      return;
+    }
+
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password
+      });
+
+      if (error) {
+        setAuthError(error.message);
+      } else {
+        setIsAuthLoading(true);
+      }
+    } catch (signInError) {
+      setAuthError(
+        signInError instanceof Error ? signInError.message : "Unable to sign in. Try again."
+      );
+    } finally {
+      setIsSubmittingAuth(false);
+    }
+  };
+
+  const handleSignOut = async () => {
+    setError(null);
+    setIsAuthLoading(true);
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) {
+        setError(error.message);
+        setIsAuthLoading(false);
+        return;
+      }
+      setSubjects([]);
+      setFocusEntries([]);
+      setActiveSubjectId(null);
+      setLibraryOpen(false);
+      setTimerOpen(false);
+      setProductivityOpen(false);
+      setIsLoading(false);
+    } catch (signOutError) {
+      setError(
+        signOutError instanceof Error ? signOutError.message : "Unable to sign out. Try again."
+      );
+      setIsAuthLoading(false);
+    }
+  };
+
   const insightStats = useMemo(() => {
     const subjectLabel = activeSubject ? activeSubject.name : "this subject";
     if (exams.length === 0) {
@@ -708,6 +872,164 @@ function App() {
           Add <code className="rounded bg-slate-900/10 px-1 py-0.5">VITE_SUPABASE_URL</code> and
           <code className="rounded bg-slate-900/10 px-1 py-0.5">VITE_SUPABASE_ANON_KEY</code> to your <code>.env</code> file, then restart <code>bun run dev</code>.
         </p>
+      </div>
+    );
+  }
+
+  if (isAuthLoading) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-slate-100 px-6 text-center text-slate-500">
+        <span className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">
+          Checking session
+        </span>
+        <p className="text-sm">Hang tight while we secure your dashboard…</p>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="relative flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-900 via-slate-950 to-slate-900 px-4 py-12 text-slate-100">
+        <div
+          aria-hidden="true"
+          className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(148,163,184,0.12),_transparent_55%)]"
+        />
+        <div className="relative z-10 grid w-full max-w-6xl gap-8 rounded-[32px] border border-white/10 bg-white/5 p-8 shadow-[0_40px_120px_rgba(8,47,73,0.55)] backdrop-blur-2xl md:grid-cols-[1.15fr,1fr] md:p-12">
+          <div className="flex flex-col justify-between gap-8">
+            <div className="space-y-6">
+              <div className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-medium uppercase tracking-[0.4em] text-slate-200">
+                <GiPanda className="h-4 w-4 text-slate-300" />
+                <span>Paper Buddy</span>
+              </div>
+              <div className="space-y-4">
+                <h1 className="text-4xl font-semibold leading-tight text-white md:text-5xl">
+                  Focus smarter. Secure your progress.
+                </h1>
+                <p className="max-w-md text-base text-slate-200/80">
+                  Sign in to sync calculators, charts, and study analytics across devices with Supabase’s encrypted storage and row-level security.
+                </p>
+              </div>
+            </div>
+            <div className="grid gap-5 text-sm text-slate-200/75">
+              <div className="flex items-start gap-3 rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur">
+                <ChartBar className="mt-0.5 h-5 w-5 text-sky-300" />
+                <div>
+                  <p className="text-sm font-semibold text-white">Personal analytics</p>
+                  <p>
+                    Keep each student’s performance dashboards separated and private with Supabase policies.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-start gap-3 rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur">
+                <ShieldCheck className="mt-0.5 h-5 w-5 text-emerald-300" />
+                <div>
+                  <p className="text-sm font-semibold text-white">Secure authentication</p>
+                  <p>
+                    Supabase automatically hashes passwords with bcrypt and refreshes tokens for safe, persistent sessions.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-start gap-3 rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur">
+                <Trophy className="mt-0.5 h-5 w-5 text-amber-200" />
+                <div>
+                  <p className="text-sm font-semibold text-white">Win-ready insights</p>
+                  <p>
+                    Unlock calculators, charts, and productivity tracking tailored for Paper Buddy’s study workflow.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <Card className="w-full max-w-md justify-self-center bg-white/95 text-slate-900 shadow-[0_30px_80px_rgba(15,23,42,0.35)]">
+            <CardHeader className="space-y-1">
+              <CardTitle className="text-2xl font-semibold">
+                {isSignUp ? "Create your account" : "Welcome back"}
+              </CardTitle>
+              <CardDescription>
+                {isSignUp
+                  ? "Use your school email to get started. You’ll confirm your address before signing in."
+                  : "Sign in to view your saved subjects, exams, and focus history."}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {authError && (
+                <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-600">
+                  {authError}
+                </div>
+              )}
+              {authMessage && (
+                <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700">
+                  {authMessage}
+                </div>
+              )}
+              <form className="space-y-5" onSubmit={handleAuthSubmit}>
+                <div className="space-y-2">
+                  <Label htmlFor="auth-email">Email</Label>
+                  <Input
+                    id="auth-email"
+                    type="email"
+                    autoComplete="email"
+                    placeholder="you@example.com"
+                    value={authEmail}
+                    onChange={handleAuthEmailChange}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="auth-password">Password</Label>
+                  <Input
+                    id="auth-password"
+                    type="password"
+                    autoComplete={isSignUp ? "new-password" : "current-password"}
+                    placeholder={isSignUp ? "Create a secure password" : "Enter your password"}
+                    value={authPassword}
+                    onChange={handleAuthPasswordChange}
+                    required
+                    minLength={8}
+                  />
+                  <p className="text-xs text-slate-400">
+                    Minimum 8 characters.
+                  </p>
+                </div>
+                {isSignUp && (
+                  <div className="space-y-2">
+                    <Label htmlFor="auth-confirm">Confirm password</Label>
+                    <Input
+                      id="auth-confirm"
+                      type="password"
+                      autoComplete="new-password"
+                      placeholder="Re-enter your password"
+                      value={authConfirmPassword}
+                      onChange={handleAuthConfirmPasswordChange}
+                      required
+                      minLength={8}
+                    />
+                  </div>
+                )}
+                <Button type="submit" className="w-full" disabled={isSubmittingAuth}>
+                  {isSubmittingAuth
+                    ? isSignUp
+                      ? "Creating account…"
+                      : "Signing in…"
+                    : isSignUp
+                    ? "Create account"
+                    : "Sign in"}
+                </Button>
+              </form>
+              <div className="text-center text-sm text-slate-500">
+                {isSignUp ? "Already have an account?" : "Need an account?"}{" "}
+                <button
+                  type="button"
+                  onClick={toggleAuthView}
+                  className="font-semibold text-slate-900 underline-offset-4 transition hover:underline"
+                >
+                  {isSignUp ? "Sign in" : "Sign up"}
+                </button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       </div>
     );
   }
@@ -1155,19 +1477,6 @@ function App() {
                             />
                           </div>
                           <div className="space-y-2">
-                            <Label htmlFor={`edit-total-${exam.id}`}>Total</Label>
-                            <Input
-                              id={`edit-total-${exam.id}`}
-                              name="total"
-                              type="number"
-                              inputMode="decimal"
-                              min="0"
-                              step="0.001"
-                              value={editForm.total}
-                              onChange={handleEditChange}
-                            />
-                          </div>
-                          <div className="space-y-2">
                             <Label htmlFor={`edit-completion-${exam.id}`}>Completion %</Label>
                             <Input
                               id={`edit-completion-${exam.id}`}
@@ -1284,6 +1593,8 @@ function App() {
               className="sidebar-icon shadow-[0_12px_30px_rgba(244,63,94,0.35)] bg-gradient-to-br from-rose-500 to-rose-600"
               aria-label="Sign out"
               type="button"
+              onClick={handleSignOut}
+              disabled={isAuthLoading}
             >
               <LogOut className="h-6 w-6" />
             </button>
@@ -1311,9 +1622,8 @@ function App() {
             </div>
 
             <div className="flex flex-wrap items-center gap-4">
-
               <Separator className="hidden h-10 w-px md:block" />
-              <div className="glass-panel flex items-center gap-3 px-4 py-2">
+              <div className="glass-panel flex flex-wrap items-center gap-3 px-4 py-2">
                 <button
                   type="button"
                   className="relative rounded-full bg-white/80 p-2 text-slate-500 transition hover:text-slate-700"
@@ -1324,14 +1634,31 @@ function App() {
                     3
                   </span>
                 </button>
-                <Avatar>
-                  <AvatarImage src="https://i.pravatar.cc/80?img=32" alt="Gimhan Perera" />
-                  <AvatarFallback>GP</AvatarFallback>
-                </Avatar>
-                <div>
-                  <p className="text-sm font-semibold text-slate-700">Gimhan Perera</p>
-                  <p className="text-xs text-slate-400">Physics Stream</p>
+                <div className="flex items-center gap-3">
+                  <Avatar>
+                    {avatarUrl ? (
+                      <AvatarImage src={avatarUrl} alt={accountName} />
+                    ) : null}
+                    <AvatarFallback>{userInitials}</AvatarFallback>
+                  </Avatar>
+                  <div className="min-w-[160px]">
+                    <p className="text-sm font-semibold text-slate-700">{accountName}</p>
+                    <p className="text-xs text-slate-400">
+                      {userEmail ? userEmail : "Supabase session active"}
+                    </p>
+                  </div>
                 </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="ml-auto bg-white/80 text-slate-600 hover:bg-white"
+                  onClick={handleSignOut}
+                  disabled={isAuthLoading || isLoading}
+                >
+                  <LogOut className="mr-1.5 h-4 w-4" />
+                  Sign out
+                </Button>
               </div>
             </div>
           </header>
@@ -1481,20 +1808,6 @@ function App() {
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="total">Total (optional)</Label>
-                      <Input
-                        id="total"
-                        name="total"
-                        type="number"
-                        inputMode="decimal"
-                        min="0"
-                        step="0.001"
-                        value={form.total}
-                        onChange={handleInputChange}
-                        placeholder="17.5"
-                      />
-                    </div>
-                    <div className="space-y-2">
                       <Label htmlFor="completion">Completion %</Label>
                       <Input
                         id="completion"
@@ -1511,8 +1824,7 @@ function App() {
                     </div>
                     <div className="md:col-span-2 flex flex-wrap items-center justify-between gap-3">
                       <p className="text-xs text-slate-400">
-                        Tip: totals default to MCQ + essay if left blank. Clearing browser storage resets the
-                        dashboard.
+                        Totals auto-calculate from MCQ + essay.
                       </p>
                       <div className="flex gap-3">
                         <Button type="button" variant="ghost" onClick={handleClearForm}>
