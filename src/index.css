@@ -33,3 +33,21 @@
     @apply inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium;
   }
 }
+
+@layer utilities {
+  @keyframes loading-bar {
+    0% {
+      transform: translateX(-100%);
+    }
+    50% {
+      transform: translateX(10%);
+    }
+    100% {
+      transform: translateX(120%);
+    }
+  }
+
+  .animate-loading-bar {
+    animation: loading-bar 1.6s ease-in-out infinite;
+  }
+}
