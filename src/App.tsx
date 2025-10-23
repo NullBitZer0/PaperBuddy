@@ -650,17 +650,23 @@ function App() {
     if (!user || !isSupabaseConfigured) {
       setSubjects([]);
       setFocusEntries([]);
+      setAnnouncements([]);
       setIsLoading(false);
       return;
     }
 
     setIsLoading(true);
-    await Promise.all([loadSubjects(), loadFocusEntries(), loadAnnouncements()]);
-    setIsLoading(false);
+    try {
+      await Promise.all([loadSubjects(), loadFocusEntries(), loadAnnouncements()]);
+    } catch (refreshError) {
+      console.error(refreshError);
+    } finally {
+      setIsLoading(false);
+    }
   }, [user, loadSubjects, loadFocusEntries, loadAnnouncements]);
 
   useEffect(() => {
-    refreshAll();
+    void refreshAll();
   }, [refreshAll]);
 
   useEffect(() => {
