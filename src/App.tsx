@@ -78,6 +78,27 @@ type FocusEntry = {
   duration: number;
 };
 
+type SupabaseExamRow = {
+  id: string;
+  paper: string;
+  mcq: number | null;
+  essay: number | null;
+  total: number | null;
+  completion: number | null;
+};
+
+type SupabaseSubjectRow = {
+  id: string;
+  name: string;
+  exams: SupabaseExamRow[] | null;
+};
+
+type SupabaseFocusEntryRow = {
+  id: string;
+  duration: number | null;
+  started_at: string | null;
+};
+
 type ProductivityState = {
   focusEntries: FocusEntry[];
 };
@@ -345,10 +366,10 @@ function App() {
       return;
     }
 
-    const mapped: Subject[] = (data ?? []).map((subject) => ({
+    const mapped: Subject[] = (data ?? []).map((subject: SupabaseSubjectRow) => ({
       id: subject.id,
       name: subject.name,
-      exams: (subject.exams ?? []).map((exam) => ({
+      exams: (subject.exams ?? []).map((exam: SupabaseExamRow): ExamEntry => ({
         id: exam.id,
         paper: exam.paper,
         mcq: Number(exam.mcq ?? 0),
@@ -387,7 +408,7 @@ function App() {
       return;
     }
 
-    const mapped: FocusEntry[] = (data ?? []).map((entry) => ({
+    const mapped: FocusEntry[] = (data ?? []).map((entry: SupabaseFocusEntryRow): FocusEntry => ({
       id: entry.id,
       duration: Number(entry.duration ?? 0),
       timestamp: entry.started_at ?? new Date().toISOString()
@@ -1170,7 +1191,7 @@ function App() {
               <div className="space-y-1">
 
                 <h1 className="text-2xl font-semibold text-slate-900 md:text-3xl">
-                  STUDY BUDDY
+                  PAPER BUDDY
                 </h1>
                 <div className="inline-flex items-center gap-2 rounded-full bg-white/80 px-3 py-1 text-xs font-medium text-slate-600 shadow-inner shadow-white/40">
                   <Layers className="h-3.5 w-3.5 text-slate-500" />
