@@ -3348,18 +3348,19 @@ function PomodoroTimer({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/20 px-4 py-10 backdrop-blur-sm">
-      <div className="glass-panel relative flex w-full max-w-5xl flex-col gap-10 rounded-[32px] bg-white/90 p-6 shadow-[0_40px_90px_rgba(15,23,42,0.25)] sm:p-8 lg:p-10">
-        <button
-          type="button"
-          className="absolute right-8 top-8 rounded-full bg-white/70 p-2 text-slate-400 transition hover:text-slate-600"
-          onClick={onClose}
-          aria-label="Close Pomodoro timer"
-        >
-          <X className="h-5 w-5" />
-        </button>
+    <div className="fixed inset-0 z-50 bg-slate-900/20 backdrop-blur-sm">
+      <div className="flex min-h-full w-full items-start justify-center overflow-y-auto px-4 py-6 sm:items-center sm:py-10">
+        <div className="glass-panel relative flex w-full max-w-5xl flex-col gap-8 rounded-[32px] bg-white/90 p-6 shadow-[0_40px_90px_rgba(15,23,42,0.25)] sm:gap-10 sm:p-8 lg:p-10 max-h-[calc(100vh-3rem)] overflow-y-auto sm:max-h-[calc(100vh-4rem)]">
+          <button
+            type="button"
+            className="absolute right-4 top-4 rounded-full bg-white/70 p-2 text-slate-400 transition hover:text-slate-600 sm:right-6 sm:top-6 lg:right-8 lg:top-8"
+            onClick={onClose}
+            aria-label="Close Pomodoro timer"
+          >
+            <X className="h-5 w-5" />
+          </button>
 
-        <div className="flex flex-col gap-8 lg:grid lg:grid-cols-[2fr,1fr] lg:items-start lg:gap-12">
+          <div className="flex flex-col gap-8 lg:grid lg:grid-cols-[2fr,1fr] lg:items-start lg:gap-12">
           <div className="space-y-8">
             <div className="space-y-3">
               <p className="text-sm uppercase tracking-[0.45em] text-slate-400">Pomodoro</p>
@@ -3506,6 +3507,7 @@ function PomodoroTimer({
         </div>
       </div>
     </div>
+  </div>
   );
 }
 
@@ -3691,115 +3693,117 @@ function ProductivityPanel({
   } as const;
 
   return (
-    <div className="fixed inset-x-4 top-[6.5rem] z-40 mx-auto max-w-md sm:inset-auto sm:right-12 sm:top-24 sm:mx-0 sm:w-[360px]">
-      <div className="glass-panel relative space-y-6 rounded-3xl bg-white/90 p-5 shadow-[0_35px_60px_rgba(15,23,42,0.25)] sm:p-6">
-        <button
-          type="button"
-          className="absolute right-4 top-4 rounded-full bg-white/70 p-1.5 text-slate-400 transition hover:text-slate-600"
-          onClick={onClose}
-          aria-label="Close productivity panel"
-        >
-          <X className="h-4 w-4" />
-        </button>
+    <div className="fixed inset-0 z-40 bg-slate-900/20 backdrop-blur-sm">
+      <div className="flex min-h-full w-full items-start justify-center overflow-y-auto px-4 py-6 sm:justify-end sm:px-6 sm:py-10">
+        <div className="glass-panel relative w-full max-w-lg space-y-6 rounded-3xl bg-white/90 p-5 shadow-[0_35px_60px_rgba(15,23,42,0.25)] sm:w-[360px] sm:p-6 max-h-[calc(100vh-3rem)] overflow-y-auto sm:max-h-[calc(100vh-4rem)]">
+          <button
+            type="button"
+            className="absolute right-4 top-4 rounded-full bg-white/70 p-1.5 text-slate-400 transition hover:text-slate-600"
+            onClick={onClose}
+            aria-label="Close productivity panel"
+          >
+            <X className="h-4 w-4" />
+          </button>
 
-        <div className="space-y-3 sm:pr-8">
-          <p className="text-xs uppercase tracking-[0.35em] text-slate-400">Focus insights</p>
-          <h3 className="text-xl font-semibold text-slate-900">{titleMap[view]}</h3>
-          <p className="text-xs text-slate-500">
-            Total focus time resets daily at midnight and accumulates automatically from Pomodoro sessions.
-          </p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          {viewTabs.map((tab) => {
-            const isActive = tab.value === view;
-            return (
-              <button
-                key={tab.value}
-                type="button"
-                className={cn(
-                  "flex-1 rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] transition",
-                  isActive
-                    ? "bg-slate-900 text-white shadow-[0_12px_25px_rgba(15,23,42,0.25)]"
-                    : "bg-white/70 text-slate-500 hover:text-slate-700"
-                )}
-                onClick={() => onChangeView(tab.value)}
-              >
-                {tab.label}
-              </button>
-            );
-          })}
-        </div>
-
-        {view === "day" ? (
-          <div className="flex flex-wrap items-center gap-6">
-            <div className="relative h-32 w-32 rounded-full" style={pieStyle}>
-              <div className="absolute inset-[12%] rounded-full bg-white/90 shadow-inner shadow-white/70" />
-              <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-                <span className="text-sm font-semibold text-slate-500">Focus</span>
-                <span className="text-lg font-semibold text-slate-900">{formatDuration(totalSeconds)}</span>
-              </div>
-            </div>
-            <div className="flex-1 space-y-2 text-sm text-slate-600">
-              <p>
-                Total: <span className="font-semibold text-slate-900">{formatDuration(totalSeconds)}</span>
-              </p>
-              <p>
-                Target: <span className="font-semibold text-slate-900">{formatDuration(targetSeconds)}</span>
-              </p>
-              <p>
-                Remaining: <span className="font-semibold text-slate-900">{formatDuration(remainingSeconds)}</span>
-              </p>
-              <p>
-                Completion: <span className="font-semibold text-slate-900">{focusPercentage.toFixed(0)}%</span>
-              </p>
-            </div>
+          <div className="space-y-3 sm:pr-8">
+            <p className="text-xs uppercase tracking-[0.35em] text-slate-400">Focus insights</p>
+            <h3 className="text-xl font-semibold text-slate-900">{titleMap[view]}</h3>
+            <p className="text-xs text-slate-500">
+              Total focus time resets daily at midnight and accumulates automatically from Pomodoro sessions.
+            </p>
           </div>
-        ) : (
-          <div className="space-y-3">
-            {chartPoints.length > 0 && hasChartData ? (
-              <FocusLineChart points={chartPoints} targetSeconds={targetSeconds} />
-            ) : (
-              <div className="flex h-36 w-full items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-white/60 text-sm text-slate-500">
-                No records yet.
-              </div>
-            )}
-            <div className="flex flex-wrap gap-4 text-sm text-slate-600">
-              <p>
-                Total: <span className="font-semibold text-slate-900">{formatDuration(totalSeconds)}</span>
-              </p>
-              <p>
-                Target: <span className="font-semibold text-slate-900">{formatDuration(targetSeconds)}</span>
-              </p>
-              <p>
-                Remaining: <span className="font-semibold text-slate-900">{formatDuration(remainingSeconds)}</span>
-              </p>
-              <p>
-                Completion: <span className="font-semibold text-slate-900">{focusPercentage.toFixed(0)}%</span>
-              </p>
-            </div>
-          </div>
-        )}
 
-        <div className="space-y-3">
-          <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
-            {view === "day" ? "Latest sessions" : "Breakdown"}
-          </p>
-          {listItems.length > 0 ? (
-            <ul className="space-y-2 text-sm text-slate-600">
-              {listItems.map((item) => (
-                <li
-                  key={item.key}
-                  className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-white/80 px-3 py-2 shadow-inner shadow-white/60"
+          <div className="flex flex-wrap items-center gap-2">
+            {viewTabs.map((tab) => {
+              const isActive = tab.value === view;
+              return (
+                <button
+                  key={tab.value}
+                  type="button"
+                  className={cn(
+                    "flex-1 rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] transition",
+                    isActive
+                      ? "bg-slate-900 text-white shadow-[0_12px_25px_rgba(15,23,42,0.25)]"
+                      : "bg-white/70 text-slate-500 hover:text-slate-700"
+                  )}
+                  onClick={() => onChangeView(tab.value)}
                 >
-                  <span>{item.label}</span>
-                  <span className="font-semibold text-slate-900">{item.detail}</span>
-                </li>
-              ))}
-            </ul>
+                  {tab.label}
+                </button>
+              );
+            })}
+          </div>
+
+          {view === "day" ? (
+            <div className="flex flex-col gap-6 sm:flex-row sm:items-center">
+              <div className="relative h-32 w-32 rounded-full" style={pieStyle}>
+                <div className="absolute inset-[12%] rounded-full bg-white/90 shadow-inner shadow-white/70" />
+                <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
+                  <span className="text-sm font-semibold text-slate-500">Focus</span>
+                  <span className="text-lg font-semibold text-slate-900">{formatDuration(totalSeconds)}</span>
+                </div>
+              </div>
+              <div className="flex-1 space-y-2 text-sm text-slate-600 sm:min-w-[180px]">
+                <p>
+                  Total: <span className="font-semibold text-slate-900">{formatDuration(totalSeconds)}</span>
+                </p>
+                <p>
+                  Target: <span className="font-semibold text-slate-900">{formatDuration(targetSeconds)}</span>
+                </p>
+                <p>
+                  Remaining: <span className="font-semibold text-slate-900">{formatDuration(remainingSeconds)}</span>
+                </p>
+                <p>
+                  Completion: <span className="font-semibold text-slate-900">{focusPercentage.toFixed(0)}%</span>
+                </p>
+              </div>
+            </div>
           ) : (
-            <p className="text-xs text-slate-500">No records yet.</p>
+            <div className="space-y-3">
+              {chartPoints.length > 0 && hasChartData ? (
+                <FocusLineChart points={chartPoints} targetSeconds={targetSeconds} />
+              ) : (
+                <div className="flex h-36 w-full items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-white/60 text-sm text-slate-500">
+                  No records yet.
+                </div>
+              )}
+              <div className="grid grid-cols-1 gap-3 text-sm text-slate-600 sm:grid-cols-2">
+                <p>
+                  Total: <span className="font-semibold text-slate-900">{formatDuration(totalSeconds)}</span>
+                </p>
+                <p>
+                  Target: <span className="font-semibold text-slate-900">{formatDuration(targetSeconds)}</span>
+                </p>
+                <p>
+                  Remaining: <span className="font-semibold text-slate-900">{formatDuration(remainingSeconds)}</span>
+                </p>
+                <p>
+                  Completion: <span className="font-semibold text-slate-900">{focusPercentage.toFixed(0)}%</span>
+                </p>
+              </div>
+            </div>
           )}
+
+          <div className="space-y-3">
+            <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
+              {view === "day" ? "Latest sessions" : "Breakdown"}
+            </p>
+            {listItems.length > 0 ? (
+              <ul className="space-y-2 text-sm text-slate-600">
+                {listItems.map((item) => (
+                  <li
+                    key={item.key}
+                    className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-white/80 px-3 py-2 shadow-inner shadow-white/60"
+                  >
+                    <span>{item.label}</span>
+                    <span className="font-semibold text-slate-900">{item.detail}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-xs text-slate-500">No records yet.</p>
+            )}
+          </div>
         </div>
       </div>
     </div>
