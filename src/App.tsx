@@ -2680,8 +2680,36 @@ function App() {
                   <Button
                     type="button"
                     variant="outline"
-                    className="rounded-full border-slate-200 bg-white/80 text-slate-600 hover:bg-white"
-                    disabled
+                    className="rounded-full border-rose-200 bg-white/80 text-rose-600 transition hover:bg-white hover:text-rose-700"
+                    onClick={() => {
+                      setConfirmDialog({
+                        title: "Clear all announcements",
+                        description: "This removes every notification for all users. Continue?",
+                        confirmLabel: "Clear",
+                        cancelLabel: "Cancel",
+                        tone: "danger",
+                        onConfirm: async () => {
+                          if (!isSupabaseConfigured) {
+                            setError("Supabase environment variables are missing.");
+                            return;
+                          }
+
+                          const { error: bulkDeleteError } = await supabase
+                            .from("announcements")
+                            .delete()
+                            .not("id", "is", null);
+
+                          if (bulkDeleteError) {
+                            console.error(bulkDeleteError);
+                            setError(bulkDeleteError.message);
+                            return;
+                          }
+
+                          setAnnouncements([]);
+                          setAnnouncementPanelOpen(false);
+                        }
+                      });
+                    }}
                   >
                     Clear announcements
                   </Button>
