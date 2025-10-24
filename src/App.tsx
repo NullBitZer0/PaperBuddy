@@ -15,6 +15,7 @@ import {
   ShieldCheck,
   Settings,
   SkipForward,
+  Users,
   Trash2,
   Trophy,
   X
@@ -907,6 +908,13 @@ function App() {
 
   const adminSummaryCards = useMemo(
     () => [
+      {
+        label: "Total users",
+        value: 0,
+        hint: "Workspace users (coming soon)",
+        icon: Users,
+        gradient: "from-slate-500 via-slate-600 to-slate-700"
+      },
       {
         label: "Subjects tracked",
         value: adminStats.totals.subjects,
@@ -2165,7 +2173,7 @@ function App() {
                   Announcement
                 </Button>
               </div>
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
                 {adminSummaryCards.map(({ label, value, hint, icon: Icon, gradient }) => (
                   <Card key={label} className="relative overflow-hidden text-white">
                     <div className={`absolute inset-0 -z-10 bg-gradient-to-br ${gradient}`} />
@@ -2184,6 +2192,16 @@ function App() {
                   </Card>
                 ))}
               </div>
+              <Card className="glass-panel overflow-hidden border border-dashed border-slate-300/70 bg-white/70">
+                <CardHeader>
+                  <Badge className="bg-slate-900/10 text-slate-700">Resources</Badge>
+                  <CardTitle className="text-xl text-slate-900">Curated resource hub</CardTitle>
+                  <CardDescription>
+                    Soon you&apos;ll be able to share trusted sites and Telegram groups with every learner.
+                    We&apos;re building the tooling to add, edit, and track engagement right from this dashboard.
+                  </CardDescription>
+                </CardHeader>
+              </Card>
 
               <Card className="relative overflow-hidden">
                 <CardHeader>
