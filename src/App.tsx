@@ -15,6 +15,7 @@ import {
   ShieldCheck,
   Settings,
   SkipForward,
+  ExternalLink,
   Users,
   Trash2,
   Trophy,
@@ -143,6 +144,29 @@ const BREAK_DURATION = 5 * 60;
 const HISTORY_LIMIT_DAYS = 120;
 const SECONDS_PER_HOUR = 60 * 60;
 const SECONDS_PER_DAY = 24 * SECONDS_PER_HOUR;
+const RESOURCE_PLACEHOLDERS = [
+  {
+    id: "placeholder-1",
+    title: "Cambridge Past Papers",
+    url: "https://www.cambridgeinternational.org/programmes-and-qualifications/cambridge-advanced/cambridge-international-as-and-a-levels/",
+    category: "Website",
+    description: "Official archive of past papers and examiner reports organised by subject and year."
+  },
+  {
+    id: "placeholder-2",
+    title: "Paper Buddy Telegram",
+    url: "https://t.me/paperbuddy",
+    category: "Telegram group",
+    description: "Daily exam tips, revision reminders, and peer accountability inside Telegram."
+  },
+  {
+    id: "placeholder-3",
+    title: "Anki Essentials",
+    url: "https://ankiweb.net/about",
+    category: "Tool",
+    description: "Spaced repetition flashcards that sync across devices—perfect for quick memory drills."
+  }
+];
 
 function getStartOfDay(date: Date): Date {
   const result = new Date(date);
@@ -371,6 +395,7 @@ function App() {
   const [activeSubjectId, setActiveSubjectId] = useState<string | null>(null);
   const [focusEntries, setFocusEntries] = useState<FocusEntry[]>([]);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+  const [resourcesOpen, setResourcesOpen] = useState(false);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -430,6 +455,7 @@ function App() {
       setEmailToastMessage(null);
       setAnnouncementPanelOpen(false);
       setAnnouncementModalOpen(false);
+      setResourcesOpen(false);
       return;
     }
 
@@ -1649,12 +1675,23 @@ function App() {
     setAnnouncementPanelOpen(true);
   };
 
+  const closeResources = () => {
+    setResourcesOpen(false);
+  };
+
+  const handleResourceOverlayClick = (event: MouseEvent<HTMLDivElement>) => {
+    if (event.target === event.currentTarget) {
+      closeResources();
+    }
+  };
+
   const handleSidebarClick = (label: string) => {
     if (label === "Papers") {
       setLibraryOpen(true);
       setTimerOpen(false);
       setProductivityOpen(false);
       setAnnouncementPanelOpen(false);
+      setResourcesOpen(false);
       return;
     }
 
@@ -1665,6 +1702,7 @@ function App() {
           setLibraryOpen(false);
           setProductivityOpen(false);
           setAnnouncementPanelOpen(false);
+          setResourcesOpen(false);
         }
         return next;
       });
@@ -1679,9 +1717,19 @@ function App() {
           setTimerOpen(false);
           setProductivityView("day");
           setAnnouncementPanelOpen(false);
+          setResourcesOpen(false);
         }
         return next;
       });
+      return;
+    }
+
+    if (label === "Resources") {
+      setLibraryOpen(false);
+      setTimerOpen(false);
+      setProductivityOpen(false);
+      setAnnouncementPanelOpen(false);
+      setResourcesOpen((previous) => !previous);
     }
   };
 
@@ -1692,6 +1740,7 @@ function App() {
         setLibraryOpen(false);
         setTimerOpen(false);
         setProductivityOpen(false);
+        setResourcesOpen(false);
       }
       return next;
     });
@@ -1913,6 +1962,85 @@ function App() {
                   No records yet.
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {resourcesOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm px-4 py-10"
+          onClick={handleResourceOverlayClick}
+        >
+          <div className="glass-panel relative w-full max-w-4xl overflow-hidden rounded-3xl border border-white/70 bg-white/85 shadow-[0_32px_65px_rgba(15,23,42,0.3)]">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/60 bg-white/70 px-6 py-4">
+              <div>
+                <p className="text-xs uppercase tracking-[0.35em] text-slate-400">Resources</p>
+                <h2 className="mt-1 text-2xl font-semibold text-slate-900">Study resource hub</h2>
+                <p className="text-xs text-slate-500">
+                  Hand-picked websites and communities to help you revise faster—more coming soon.
+                </p>
+              </div>
+              <Button
+                variant="ghost"
+                className="rounded-full bg-white/80 text-slate-600 hover:bg-white"
+                type="button"
+                onClick={closeResources}
+              >
+                <X className="mr-2 h-4 w-4" /> Close
+              </Button>
+            </div>
+            <div className="max-h-[70vh] overflow-y-auto px-6 py-5 space-y-4">
+              {RESOURCE_PLACEHOLDERS.map((resource) => (
+                <div
+                  key={resource.id}
+                  className="glass-panel space-y-3 rounded-2xl bg-white/85 p-5 shadow-[0_18px_32px_rgba(15,23,42,0.18)]"
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="space-y-2">
+                      <span className="inline-flex items-center rounded-full bg-slate-900/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.3em] text-slate-600">
+                        {resource.category}
+                      </span>
+                      <h3 className="text-lg font-semibold text-slate-900">{resource.title}</h3>
+                      <p className="text-sm text-slate-600">{resource.description}</p>
+                    </div>
+                    <a
+                      href={resource.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-2 rounded-full bg-slate-900 text-sm font-semibold text-white px-4 py-2 shadow-[0_14px_30px_rgba(15,23,42,0.25)] transition hover:bg-slate-800"
+                    >
+                      Visit <ExternalLink className="h-4 w-4" />
+                    </a>
+                  </div>
+                  {isAdmin ? (
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="rounded-full border-slate-200 bg-white/80 text-slate-600 hover:bg-white"
+                        disabled
+                      >
+                        Edit (coming soon)
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        className="rounded-full bg-rose-500/10 text-rose-600 hover:bg-rose-500/15"
+                        disabled
+                      >
+                        Delete
+                      </Button>
+                      <span className="text-[11px] uppercase tracking-[0.3em] text-slate-400">
+                        Admin controls preview
+                      </span>
+                    </div>
+                  ) : null}
+                </div>
+              ))}
+              <div className="rounded-2xl border border-dashed border-slate-300 bg-white/75 px-4 py-3 text-sm text-slate-600 shadow-inner shadow-white/40">
+                📌 Admins will be able to add, edit, and curate resources directly from this panel soon.
+              </div>
             </div>
           </div>
         </div>
