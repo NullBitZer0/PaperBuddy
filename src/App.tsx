@@ -168,6 +168,109 @@ const RESOURCE_PLACEHOLDERS = [
   }
 ];
 
+const MOTIVATION_NOTES = [
+  {
+    id: "motivation-1",
+    headline: "Paper Buddy shout-out",
+    body: "A/L success is 1% talent and 99% consistent effort. Note your weak MCQ chapters today and review them before the weekend."
+  },
+  {
+    id: "motivation-2",
+    headline: "Study tip from Colombo",
+    body: "Switch subjects every 50 minutes. Your brain stays fresher when you alternate between calculations and theory."
+  },
+  {
+    id: "motivation-3",
+    headline: "Remember the goal",
+    body: "Every past paper you attempt now lifts your confidence for the real exam in August. Keep track of your timing—it matters."
+  },
+  {
+    id: "motivation-4",
+    headline: "Teacher’s note",
+    body: "Take short breaks with a glass of water and a stretch. Pomodoros aren’t just timers—they help you reset your focus."
+  },
+  {
+    id: "motivation-5",
+    headline: "Short-Note advice",
+    body: "Write one short summary page for each lesson you revise. When the week ends, you’ll have a mini revision booklet."
+  },
+  {
+    id: "motivation-6",
+    headline: "Physics reminder",
+    body: "Draw the diagram. Even in theory questions, a clean sketch earns marks and helps your brain visualise the answer faster."
+  },
+  {
+    id: "motivation-7",
+    headline: "Chemistry lab wisdom",
+    body: "Balance equations aloud. Hearing yourself explain the steps is a powerful way to lock in stoichiometry under exam pressure."
+  },
+  {
+    id: "motivation-8",
+    headline: "Maths consistency",
+    body: "Tackle three structured questions a day. It’s better to be consistent than to cram 15 questions the night before class."
+  },
+  {
+    id: "motivation-9",
+    headline: "Biology boost",
+    body: "Create quick quizzes with your friends. Teaching each other cellular processes builds confidence before practicals."
+  },
+  {
+    id: "motivation-10",
+    headline: "Economics edge",
+    body: "Tie every theory back to a Sri Lankan example. You’ll remember the diagrams better when you can link them to the local news."
+  },
+  {
+    id: "motivation-11",
+    headline: "General knowledge",
+    body: "Keep a pocket notebook for new vocabulary and facts. Five minutes of revision after dinner keeps them fresh."
+  },
+  {
+    id: "motivation-12",
+    headline: "Stay hydrated",
+    body: "Water and short walks fuel your brain. Don’t wait for a headache to realise you’ve been dehydrated for hours."
+  },
+  {
+    id: "motivation-13",
+    headline: "Group study",
+    body: "Form a 3-person WhatsApp study group. Share the next day’s plan each night and hold each other accountable."
+  },
+  {
+    id: "motivation-14",
+    headline: "Past paper drill",
+    body: "Rewrite one essay answer from last week without looking at your notes. Compare with the original and mark your improvements."
+  },
+  {
+    id: "motivation-15",
+    headline: "Mindset shift",
+    body: "If a topic feels hard, break it into 20-minute chunks. Progress beats perfection—especially at 2 a.m."
+  },
+  {
+    id: "motivation-16",
+    headline: "Family support",
+    body: "Talk to your parents about your study schedule. They’ll support your quiet hours when they understand the plan."
+  },
+  {
+    id: "motivation-17",
+    headline: "Exam hall prep",
+    body: "Practise writing answers using the official answer sheet layout. Familiarity saves precious seconds in the real exam."
+  },
+  {
+    id: "motivation-18",
+    headline: "Sleep matters",
+    body: "Seven hours of sleep locks memories in place. All-nighters might impress no one, but they definitely slow you down tomorrow."
+  },
+  {
+    id: "motivation-19",
+    headline: "Confidence mantra",
+    body: "You’ve conquered O/Ls already. A/Ls are tougher, yes—but you’re smarter, disciplined, and supported. Trust the process."
+  },
+  {
+    id: "motivation-20",
+    headline: "Exam day visualisation",
+    body: "Imagine walking into the exam hall confident and calm. Visualising success reduces stress and tells your brain you’re ready."
+  }
+];
+
 function getStartOfDay(date: Date): Date {
   const result = new Date(date);
   result.setHours(0, 0, 0, 0);
@@ -2641,7 +2744,7 @@ function App() {
                     <span className="font-semibold text-slate-600">
                       {activeSubject ? activeSubject.name : "this subject"}
                     </span>
-                    {" "}and unlock AI-led guidance.
+                    {" "}and stay motivated through the grind to A/Ls.
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
@@ -2657,23 +2760,7 @@ function App() {
                       hint={insightStats.completionHint}
                     />
                   </div>
-                  <div className="rounded-2xl bg-gradient-to-br from-violet-500 to-fuchsia-500 p-5 text-white shadow-[0_18px_35px_rgba(139,92,246,0.35)]">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-xs uppercase tracking-[0.3em] text-white/70">
-                          Analyze marks with AI
-                        </p>
-                        <p className="mt-2 text-lg font-semibold">AP LearniX</p>
-                        <p className="mt-1 text-sm text-white/80">
-                          Personalized predictions, revision planning and smart insights.
-                        </p>
-                      </div>
-                      <PieChart className="h-12 w-12 opacity-90" />
-                    </div>
-                    <Button variant="ghost" className="mt-5 bg-white/20 text-white backdrop-blur-sm hover:bg-white/30">
-                      Start AI analysis
-                    </Button>
-                  </div>
+                  <MotivationCard />
                 </CardContent>
               </Card>
             </section>
@@ -2855,6 +2942,36 @@ function StatsCard({
       <p className="text-xs uppercase tracking-[0.25em] text-slate-400">{label}</p>
       <p className="text-2xl font-semibold text-slate-900">{value}</p>
       <p className="text-xs text-slate-500">{hint}</p>
+    </div>
+  );
+}
+
+function MotivationCard() {
+  const note = useMemo(() => {
+    if (MOTIVATION_NOTES.length === 0) {
+      return {
+        headline: "Stay motivated",
+        body: "Every quiet study session counts. Keep going—you’re closer to that university letter than you think."
+      };
+    }
+    const today = getStartOfDay(new Date());
+    const index = today.getDate() % MOTIVATION_NOTES.length;
+    return MOTIVATION_NOTES[index];
+  }, []);
+
+  return (
+    <div className="rounded-2xl bg-gradient-to-br from-violet-500 via-fuchsia-500 to-rose-500 p-5 text-white shadow-[0_18px_35px_rgba(139,92,246,0.35)]">
+      <div className="space-y-3">
+        <p className="text-xs uppercase tracking-[0.3em] text-white/70">
+          Daily motivation
+        </p>
+        <p className="text-lg font-semibold">{note.headline}</p>
+        <p className="text-sm text-white/85 leading-relaxed">{note.body}</p>
+      </div>
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-xs text-white/70">
+        <span>Powered by the Paper Buddy team</span>
+        <span>{new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short" })}</span>
+      </div>
     </div>
   );
 }
