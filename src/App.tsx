@@ -2094,6 +2094,24 @@ function App() {
               </Button>
             </div>
             <div className="max-h-[70vh] overflow-y-auto px-6 py-5 space-y-4">
+              {isAdmin ? (
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-dashed border-slate-300 bg-white/75 px-4 py-3 text-sm text-slate-600 shadow-inner shadow-white/40">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Add a resource</p>
+                    <p className="text-sm font-medium text-slate-700">
+                      Share a website, Telegram group, or tool for every learner. Full editing arrives soon.
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    className="rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold uppercase tracking-[0.3em] text-white hover:bg-slate-800"
+                    disabled
+                  >
+                    Create resource
+                  </Button>
+                </div>
+              ) : null}
+
               {RESOURCE_PLACEHOLDERS.map((resource) => (
                 <div
                   key={resource.id}
