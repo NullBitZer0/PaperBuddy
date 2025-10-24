@@ -322,6 +322,9 @@ const sidebarItems = [
   { icon: Settings, label: "Settings", gradient: "from-rose-400 to-rose-600" }
 ];
 
+const actionableSidebarLabels = new Set(["Papers", "Alerts", "Analytics", "Resources"]);
+const mobileNavItems = sidebarItems.filter((item) => actionableSidebarLabels.has(item.label));
+
 function getCompletionGradient(value: number): string {
   if (value >= 85) {
     return "from-emerald-400 via-emerald-500 to-emerald-600";
@@ -2243,14 +2246,16 @@ function App() {
           </div>
         </div>
       )}
-      <div className="min-h-screen px-4 pb-10 pt-8 md:px-8">
-        <div className="mx-auto flex max-w-[1280px] gap-6">
+      <div className="min-h-screen px-4 pb-24 pt-8 md:px-8">
+        <div className="mx-auto flex w-full max-w-[1280px] flex-col gap-6 lg:flex-row lg:items-start lg:gap-10">
           <aside className="glass-panel hidden w-[96px] flex-col items-center justify-between py-6 lg:flex">
             <div className="flex flex-col items-center gap-5">
               {sidebarItems.map(({ icon: Icon, label, gradient }) => {
                 const isActive =
                   (label === "Papers" && libraryOpen) ||
-                  (label === "Alerts" && timerOpen);
+                  (label === "Alerts" && timerOpen) ||
+                  (label === "Analytics" && productivityOpen) ||
+                  (label === "Resources" && resourcesOpen);
                 return (
                   <button
                     key={label}
@@ -2270,138 +2275,127 @@ function App() {
                 );
               })}
             </div>
-            <button
-              className="sidebar-icon shadow-[0_12px_30px_rgba(244,63,94,0.35)] bg-gradient-to-br from-rose-500 to-rose-600"
-              aria-label="Sign out"
-              type="button"
-              onClick={handleSignOut}
-              disabled={isAuthLoading}
-            >
-              <LogOut className="h-6 w-6" />
-            </button>
           </aside>
 
-        <div className="flex-1 space-y-6">
-          <div className="relative">
-          <header className="glass-panel flex flex-col gap-5 px-6 py-6 md:flex-row md:items-center md:justify-between md:px-10">
-            <div className="flex items-start gap-4">
-              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-900 text-white shadow-[0_12px_30px_rgba(15,23,42,0.25)]">
-                <GiPanda className="h-7 w-7" />
-              </div>
-              <div className="space-y-1">
-                <h1 className="text-2xl font-semibold text-slate-900 md:text-3xl">
-                  {isAdmin ? "Admin Console" : "PAPER BUDDY"}
-                </h1>
-                {isAdmin ? (
-                  <p className="text-sm text-slate-500">
-                    Monitor global subjects, paper submissions, and focus activity in real time.
-                  </p>
-                ) : (
-                  <>
-                    <div className="inline-flex items-center gap-2 rounded-full bg-white/80 px-3 py-1 text-xs font-medium text-slate-600 shadow-inner shadow-white/40">
-                      <Layers className="h-3.5 w-3.5 text-slate-500" />
-                      <span>{activeSubject ? activeSubject.name : "Add a subject"}</span>
-                    </div>
-                    <p className="text-sm text-slate-500">
-                      Track your exam performance and spot winning insights in seconds.
-                    </p>
-                  </>
-                )}
-              </div>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-4">
-              <Separator className="hidden h-10 w-px md:block" />
-              <button
-                type="button"
-                className={cn(
-                  "relative rounded-full bg-white/80 p-2 transition",
-                  announcementPanelOpen ? "text-rose-600" : "text-slate-500 hover:text-slate-700"
-                )}
-                aria-label="Announcements"
-                aria-pressed={announcementPanelOpen}
-                onClick={handleToggleAnnouncements}
-              >
-                <Bell className="h-5 w-5" />
-                {announcements.length > 0 ? (
-                  <span className="absolute -right-0.5 -top-0.5 inline-flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-rose-500 px-1 text-[9px] font-bold leading-none text-white">
-                    {announcements.length > 9 ? "9+" : announcements.length}
-                  </span>
-                ) : null}
-              </button>
-              <div className="glass-panel flex flex-wrap items-center gap-3 px-4 py-2">
-                <div className="flex items-center gap-3">
-                  <Avatar>
-                    {avatarUrl ? (
-                      <AvatarImage src={avatarUrl} alt={accountName} />
-                    ) : null}
-                    <AvatarFallback>{userInitials}</AvatarFallback>
-                  </Avatar>
-                  <div className="min-w-[160px]">
-                    <p className="text-sm font-semibold text-slate-700">{accountName}</p>
-                    <p className="text-xs text-slate-400">
-                      {userEmail ? userEmail : "Supabase session active"}
-                    </p>
+          <div className="flex-1 space-y-6">
+            <div className="relative">
+              <header className="glass-panel flex flex-col gap-5 px-4 py-5 sm:px-6 sm:py-6 md:flex-row md:items-center md:justify-between md:px-10">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:gap-4">
+                  <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-900 text-white shadow-[0_12px_30px_rgba(15,23,42,0.25)]">
+                    <GiPanda className="h-7 w-7" />
+                  </div>
+                  <div className="space-y-1">
+                    <h1 className="text-2xl font-semibold text-slate-900 md:text-3xl">
+                      {isAdmin ? "Admin Console" : "PAPER BUDDY"}
+                    </h1>
+                    {isAdmin ? (
+                      <p className="text-sm text-slate-500">
+                        Monitor global subjects, paper submissions, and focus activity in real time.
+                      </p>
+                    ) : (
+                      <>
+                        <div className="inline-flex items-center gap-2 rounded-full bg-white/80 px-3 py-1 text-xs font-medium text-slate-600 shadow-inner shadow-white/40">
+                          <Layers className="h-3.5 w-3.5 text-slate-500" />
+                          <span>{activeSubject ? activeSubject.name : "Add a subject"}</span>
+                        </div>
+                        <p className="text-sm text-slate-500">
+                          Track your exam performance and spot winning insights in seconds.
+                        </p>
+                      </>
+                    )}
                   </div>
                 </div>
-                {isAdmin ? (
-                  <Badge className="ml-auto bg-rose-500/15 text-rose-600">
-                    Admin
-                  </Badge>
-                ) : null}
-                {/*<Button*/}
-                {/*  type="button"*/}
-                {/*  variant="ghost"*/}
-                {/*  size="sm"*/}
-                {/*  className="ml-auto bg-white/80 text-slate-600 hover:bg-white"*/}
-                {/*  onClick={handleSignOut}*/}
-                {/*  disabled={isAuthLoading || isLoading}*/}
-                {/*>*/}
-                {/*  <LogOut className="mr-1.5 h-4 w-4" />*/}
-                {/*  Sign out*/}
-                {/*</Button>*/}
-              </div>
-            </div>
-          </header>
-          {announcementPanelOpen && (
-            <div className="absolute right-0 top-full z-30 mt-3 w-full max-w-sm rounded-2xl border border-slate-200/70 bg-white/95 p-4 text-slate-700 shadow-[0_20px_45px_rgba(15,23,42,0.25)]">
-              <div className="mb-3 flex items-center justify-between gap-2">
-                <div>
-                  <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Announcements</p>
-                  <h3 className="text-lg font-semibold text-slate-900">Latest updates</h3>
-                </div>
-                <button
-                  type="button"
-                  className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.3em] text-slate-500 transition hover:bg-slate-200"
-                  onClick={() => setAnnouncementPanelOpen(false)}
-                >
-                  Close
-                </button>
-              </div>
-              <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
-                {announcements.length > 0 ? (
-                  announcements.map((announcement) => (
-                    <div
-                      key={announcement.id}
-                      className="rounded-xl border border-slate-200/70 bg-white/90 px-4 py-3 shadow-[0_8px_20px_rgba(15,23,42,0.08)]"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <h4 className="text-sm font-semibold text-slate-900">{announcement.title}</h4>
-                        <span className="text-[10px] uppercase tracking-[0.3em] text-slate-400">
-                          {formatTimestampLabel(announcement.createdAt)}
-                        </span>
+
+                <div className="flex w-full flex-wrap items-center gap-4 md:w-auto md:justify-end">
+                  <Separator className="hidden h-10 w-px sm:block" />
+                  <button
+                    type="button"
+                    className={cn(
+                      "relative rounded-full bg-white/80 p-2 transition",
+                      announcementPanelOpen ? "text-rose-600" : "text-slate-500 hover:text-slate-700"
+                    )}
+                    aria-label="Announcements"
+                    aria-pressed={announcementPanelOpen}
+                    onClick={handleToggleAnnouncements}
+                  >
+                    <Bell className="h-5 w-5" />
+                    {announcements.length > 0 ? (
+                      <span className="absolute -right-0.5 -top-0.5 inline-flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-rose-500 px-1 text-[9px] font-bold leading-none text-white">
+                        {announcements.length > 9 ? "9+" : announcements.length}
+                      </span>
+                    ) : null}
+                  </button>
+                  <div className="glass-panel flex w-full flex-wrap items-center justify-between gap-3 px-4 py-2 sm:w-auto sm:justify-start">
+                    <div className="flex items-center gap-3">
+                      <Avatar>
+                        {avatarUrl ? <AvatarImage src={avatarUrl} alt={accountName} /> : null}
+                        <AvatarFallback>{userInitials}</AvatarFallback>
+                      </Avatar>
+                      <div className="min-w-[160px]">
+                        <p className="text-sm font-semibold text-slate-700">{accountName}</p>
+                        <p className="text-xs text-slate-400">
+                          {userEmail ? userEmail : "Supabase session active"}
+                        </p>
                       </div>
-                      <p className="mt-2 text-xs text-slate-500 leading-relaxed">
-                        {announcement.description}
-                      </p>
                     </div>
-                  ))
-                ) : (
-                  <p className="text-sm text-slate-500">No announcements yet.</p>
-                )}
-              </div>
-            </div>
-          )}
+                    {isAdmin ? (
+                      <Badge className="ml-auto bg-rose-500/15 text-rose-600 sm:ml-auto">
+                        Admin
+                      </Badge>
+                    ) : null}
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="flex items-center gap-1.5 bg-white/80 text-slate-600 hover:bg-white sm:ml-auto"
+                      onClick={handleSignOut}
+                      disabled={isAuthLoading || isLoading}
+                    >
+                      <LogOut className="h-4 w-4" />
+                      <span className="hidden sm:inline">Sign out</span>
+                    </Button>
+                  </div>
+                </div>
+              </header>
+              {announcementPanelOpen && (
+                <div className="absolute inset-x-0 top-full z-30 mt-3 w-full rounded-2xl border border-slate-200/70 bg-white/95 p-4 text-slate-700 shadow-[0_20px_45px_rgba(15,23,42,0.25)] sm:inset-auto sm:right-0 sm:mt-4 sm:w-full sm:max-w-sm">
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Announcements</p>
+                      <h3 className="text-lg font-semibold text-slate-900">Latest updates</h3>
+                    </div>
+                    <button
+                      type="button"
+                      className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.3em] text-slate-500 transition hover:bg-slate-200"
+                      onClick={() => setAnnouncementPanelOpen(false)}
+                    >
+                      Close
+                    </button>
+                  </div>
+                  <div className="max-h-72 space-y-3 overflow-y-auto pr-1">
+                    {announcements.length > 0 ? (
+                      announcements.map((announcement) => (
+                        <div
+                          key={announcement.id}
+                          className="rounded-xl border border-slate-200/70 bg-white/90 px-4 py-3 shadow-[0_8px_20px_rgba(15,23,42,0.08)]"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <h4 className="text-sm font-semibold text-slate-900">{announcement.title}</h4>
+                            <span className="text-[10px] uppercase tracking-[0.3em] text-slate-400">
+                              {formatTimestampLabel(announcement.createdAt)}
+                            </span>
+                          </div>
+                          <p className="mt-2 text-xs text-slate-500 leading-relaxed">
+                            {announcement.description}
+                          </p>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-sm text-slate-500">No announcements yet.</p>
+                    )}
+                  </div>
+                </div>
+              )}
           </div>
           {isAdmin && (
             <div className="space-y-6">
@@ -2463,30 +2457,32 @@ function App() {
                 <CardContent className="space-y-4">
                   {adminStats.subjectBreakdown.length > 0 ? (
                     <div className="overflow-hidden rounded-2xl border border-slate-200/60">
-                      <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
-                        <thead className="bg-slate-50/80 text-slate-500">
-                          <tr>
-                            <th scope="col" className="px-4 py-3 font-medium uppercase tracking-[0.2em]">
-                              Subject
-                            </th>
-                            <th scope="col" className="px-4 py-3 font-medium uppercase tracking-[0.2em]">
-                              Papers
-                            </th>
-                            <th scope="col" className="px-4 py-3 font-medium uppercase tracking-[0.2em]">
-                              Avg completion
-                            </th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-200/60 bg-white/80 text-slate-600">
-                          {adminStats.subjectBreakdown.map((subject) => (
-                            <tr key={subject.id} className="transition hover:bg-slate-100/60">
-                              <td className="px-4 py-3 font-semibold text-slate-900">{subject.name}</td>
-                              <td className="px-4 py-3">{subject.examCount.toLocaleString()}</td>
-                              <td className="px-4 py-3">{subject.completionAverage}%</td>
+                      <div className="overflow-x-auto">
+                        <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
+                          <thead className="bg-slate-50/80 text-slate-500">
+                            <tr>
+                              <th scope="col" className="px-4 py-3 font-medium uppercase tracking-[0.2em]">
+                                Subject
+                              </th>
+                              <th scope="col" className="px-4 py-3 font-medium uppercase tracking-[0.2em]">
+                                Papers
+                              </th>
+                              <th scope="col" className="px-4 py-3 font-medium uppercase tracking-[0.2em]">
+                                Avg completion
+                              </th>
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                          </thead>
+                          <tbody className="divide-y divide-slate-200/60 bg-white/80 text-slate-600">
+                            {adminStats.subjectBreakdown.map((subject) => (
+                              <tr key={subject.id} className="transition hover:bg-slate-100/60">
+                                <td className="px-4 py-3 font-semibold text-slate-900">{subject.name}</td>
+                                <td className="px-4 py-3">{subject.examCount.toLocaleString()}</td>
+                                <td className="px-4 py-3">{subject.completionAverage}%</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
                     </div>
                   ) : (
                     <p className="text-sm text-slate-500">
@@ -2536,7 +2532,7 @@ function App() {
 
           {!isAdmin && (
             <>
-              <div className="glass-panel flex flex-col gap-4 px-6 py-6 md:px-10">
+              <div className="glass-panel flex flex-col gap-4 px-4 py-6 sm:px-6 md:px-10">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="space-y-1">
                 <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Subjects</p>
@@ -2886,7 +2882,58 @@ function App() {
         </div>
       </div>
 
-      <footer className="mx-auto mt-10 max-w-[1280px] text-center text-sm text-slate-400">
+      {!isAdmin && (
+        <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-white/60 bg-white/95 px-4 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-3 shadow-[0_-12px_30px_rgba(15,23,42,0.12)] backdrop-blur lg:hidden">
+          <div className="mx-auto flex max-w-[640px] items-center gap-3">
+            <div className="flex flex-1 items-stretch gap-2">
+              {mobileNavItems.map(({ icon: Icon, label, gradient }) => {
+                const isActive =
+                  (label === "Papers" && libraryOpen) ||
+                  (label === "Alerts" && timerOpen) ||
+                  (label === "Analytics" && productivityOpen) ||
+                  (label === "Resources" && resourcesOpen);
+                return (
+                  <button
+                    key={label}
+                    type="button"
+                    className={cn(
+                      "flex flex-1 flex-col items-center gap-1 rounded-xl px-2 py-1 text-[11px] font-medium transition",
+                      isActive ? "text-slate-900" : "text-slate-500 hover:text-slate-900"
+                    )}
+                    aria-label={label}
+                    aria-pressed={isActive}
+                    onClick={() => handleSidebarClick(label)}
+                  >
+                    <span
+                      className={cn(
+                        "flex h-11 w-11 items-center justify-center rounded-xl text-white shadow-[0_10px_25px_rgba(15,23,42,0.18)]",
+                        `bg-gradient-to-br ${gradient}`,
+                        isActive && "ring-4 ring-white/50 ring-offset-2 ring-offset-white/40"
+                      )}
+                    >
+                      <Icon className="h-5 w-5" />
+                    </span>
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+            <button
+              type="button"
+              onClick={handleSignOut}
+              disabled={isAuthLoading}
+              className="flex flex-col items-center gap-1 rounded-xl bg-rose-500/15 px-3 py-1 text-[11px] font-semibold text-rose-600 shadow-[0_10px_25px_rgba(244,63,94,0.22)] transition hover:bg-rose-500/20 disabled:pointer-events-none disabled:opacity-60"
+            >
+              <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-rose-500 to-rose-600 text-white shadow-[0_10px_25px_rgba(244,63,94,0.35)]">
+                <LogOut className="h-5 w-5" />
+              </span>
+              Exit
+            </button>
+          </div>
+        </nav>
+      )}
+
+      <footer className="mx-auto mt-10 max-w-[1280px] pb-28 text-center text-sm text-slate-400 lg:pb-10">
         <p>
           Built By NullbitZer0 &copy; 2024. All rights reserved.
         </p>
@@ -3033,7 +3080,7 @@ function PomodoroTimer({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/20 px-4 py-10 backdrop-blur-sm">
-      <div className="glass-panel relative flex w-full max-w-5xl flex-col gap-10 rounded-[32px] bg-white/90 p-10 shadow-[0_40px_90px_rgba(15,23,42,0.25)]">
+      <div className="glass-panel relative flex w-full max-w-5xl flex-col gap-10 rounded-[32px] bg-white/90 p-6 shadow-[0_40px_90px_rgba(15,23,42,0.25)] sm:p-8 lg:p-10">
         <button
           type="button"
           className="absolute right-8 top-8 rounded-full bg-white/70 p-2 text-slate-400 transition hover:text-slate-600"
@@ -3062,9 +3109,9 @@ function PomodoroTimer({
               </p>
             </div>
 
-            <div className="grid gap-6 rounded-[28px] bg-gradient-to-br from-slate-900 to-slate-700 p-8 text-white shadow-[0_25px_60px_rgba(15,23,42,0.45)] md:grid-cols-[auto,1fr] md:items-center">
+            <div className="grid gap-6 rounded-[28px] bg-gradient-to-br from-slate-900 to-slate-700 p-6 text-white shadow-[0_25px_60px_rgba(15,23,42,0.45)] md:grid-cols-[auto,1fr] md:items-center lg:p-8">
               <div className="flex flex-col items-center gap-4 md:items-start">
-                <div className="flex items-center gap-3 rounded-full bg-white/10 px-4 py-2">
+                <div className="flex flex-wrap items-center justify-center gap-3 rounded-full bg-white/10 px-4 py-2 md:justify-start">
                   <button
                     type="button"
                     className={cn(
@@ -3090,11 +3137,11 @@ function PomodoroTimer({
                     Break
                   </button>
                 </div>
-                <span className="text-[72px] font-bold leading-none tracking-tight md:text-[96px]">
+                <span className="text-[64px] font-bold leading-none tracking-tight sm:text-[72px] md:text-[96px]">
                   {formatTime(secondsLeft)}
                 </span>
               </div>
-              <div className="flex flex-col justify-between gap-6 md:gap-10">
+              <div className="flex flex-col items-center justify-between gap-6 md:items-stretch md:gap-10">
                 <Progress
                   value={progress}
                   className="h-5 w-full rounded-full bg-white/20"
@@ -3121,17 +3168,17 @@ function PomodoroTimer({
             </div>
 
             <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center justify-center gap-3 sm:justify-start">
                 <button
                   type="button"
-                  className="flex items-center gap-3 rounded-full bg-slate-900 px-6 py-3 text-base font-semibold text-white shadow-[0_25px_40px_rgba(15,23,42,0.35)] transition hover:bg-slate-800"
+                  className="flex w-full items-center justify-center gap-3 rounded-full bg-slate-900 px-6 py-3 text-base font-semibold text-white shadow-[0_25px_40px_rgba(15,23,42,0.35)] transition hover:bg-slate-800 sm:w-auto sm:justify-start"
                   onClick={onStartPause}
                 >
                   {isRunning ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5" />} {isRunning ? "Pause" : "Start"}
                 </button>
                 <button
                   type="button"
-                  className="flex items-center gap-2 rounded-full bg-white px-4 py-3 text-sm font-semibold text-slate-600 shadow-[0_18px_35px_rgba(148,163,184,0.35)] transition hover:text-slate-800"
+                  className="flex w-full items-center justify-center gap-2 rounded-full bg-white px-4 py-3 text-sm font-semibold text-slate-600 shadow-[0_18px_35px_rgba(148,163,184,0.35)] transition hover:text-slate-800 sm:w-auto sm:justify-start"
                   onClick={onReset}
                   aria-label="Reset timer"
                 >
@@ -3140,7 +3187,7 @@ function PomodoroTimer({
                 </button>
                 <button
                   type="button"
-                  className="flex items-center gap-2 rounded-full bg-white px-4 py-3 text-sm font-semibold text-slate-600 shadow-[0_18px_35px_rgba(148,163,184,0.35)] transition hover:text-slate-800"
+                  className="flex w-full items-center justify-center gap-2 rounded-full bg-white px-4 py-3 text-sm font-semibold text-slate-600 shadow-[0_18px_35px_rgba(148,163,184,0.35)] transition hover:text-slate-800 sm:w-auto sm:justify-start"
                   onClick={onSkip}
                   aria-label="Skip session"
                 >
@@ -3375,8 +3422,8 @@ function ProductivityPanel({
   } as const;
 
   return (
-    <div className="fixed top-24 right-12 z-40 w-[360px]">
-      <div className="glass-panel relative space-y-6 rounded-3xl bg-white/85 p-6 shadow-[0_35px_60px_rgba(15,23,42,0.25)]">
+    <div className="fixed inset-x-4 top-[6.5rem] z-40 mx-auto max-w-md sm:inset-auto sm:right-12 sm:top-24 sm:mx-0 sm:w-[360px]">
+      <div className="glass-panel relative space-y-6 rounded-3xl bg-white/90 p-5 shadow-[0_35px_60px_rgba(15,23,42,0.25)] sm:p-6">
         <button
           type="button"
           className="absolute right-4 top-4 rounded-full bg-white/70 p-1.5 text-slate-400 transition hover:text-slate-600"
@@ -3386,7 +3433,7 @@ function ProductivityPanel({
           <X className="h-4 w-4" />
         </button>
 
-        <div className="space-y-3 pr-8">
+        <div className="space-y-3 sm:pr-8">
           <p className="text-xs uppercase tracking-[0.35em] text-slate-400">Focus insights</p>
           <h3 className="text-xl font-semibold text-slate-900">{titleMap[view]}</h3>
           <p className="text-xs text-slate-500">
@@ -3394,7 +3441,7 @@ function ProductivityPanel({
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {viewTabs.map((tab) => {
             const isActive = tab.value === view;
             return (
@@ -3416,7 +3463,7 @@ function ProductivityPanel({
         </div>
 
         {view === "day" ? (
-          <div className="flex items-center gap-6">
+          <div className="flex flex-wrap items-center gap-6">
             <div className="relative h-32 w-32 rounded-full" style={pieStyle}>
               <div className="absolute inset-[12%] rounded-full bg-white/90 shadow-inner shadow-white/70" />
               <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
@@ -3474,7 +3521,7 @@ function ProductivityPanel({
               {listItems.map((item) => (
                 <li
                   key={item.key}
-                  className="flex items-center justify-between rounded-xl bg-white/80 px-3 py-2 shadow-inner shadow-white/60"
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-white/80 px-3 py-2 shadow-inner shadow-white/60"
                 >
                   <span>{item.label}</span>
                   <span className="font-semibold text-slate-900">{item.detail}</span>
