@@ -5,7 +5,9 @@ import {
   ChartBar,
   Home,
   Layers,
+  Loader2,
   LogOut,
+  MailCheck,
   Pause,
   Pencil,
   PieChart,
@@ -29,6 +31,7 @@ import {
   useEffect,
   useId,
   useMemo,
+  useRef,
   useState
 } from "react";
 
@@ -270,6 +273,23 @@ const MOTIVATION_NOTES = [
     body: "Imagine walking into the exam hall confident and calm. Visualising success reduces stress and tells your brain you’re ready."
   }
 ];
+
+const SITE_ORIGIN =
+  import.meta.env.VITE_PUBLIC_SITE_URL ??
+  (import.meta.env.DEV ? "http://localhost:5173" : "https://paper-buddy-32im.vercel.app");
+
+const EMAIL_VERIFICATION_PATH =
+  import.meta.env.VITE_PUBLIC_EMAIL_REDIRECT_PATH && typeof import.meta.env.VITE_PUBLIC_EMAIL_REDIRECT_PATH === "string"
+    ? import.meta.env.VITE_PUBLIC_EMAIL_REDIRECT_PATH
+    : "/";
+
+const EMAIL_VERIFICATION_REDIRECT = (() => {
+  try {
+    return new URL(EMAIL_VERIFICATION_PATH, SITE_ORIGIN).toString();
+  } catch (_error) {
+    return SITE_ORIGIN;
+  }
+})();
 
 function getStartOfDay(date: Date): Date {
   const result = new Date(date);
@@ -524,6 +544,11 @@ function App() {
   const [announcementDescription, setAnnouncementDescription] = useState("");
   const [announcementError, setAnnouncementError] = useState<string | null>(null);
   const [isSendingAnnouncement, setIsSendingAnnouncement] = useState(false);
+  const [justSignedUpEmail, setJustSignedUpEmail] = useState<string | null>(null);
+  const [pendingVerificationNotice, setPendingVerificationNotice] = useState<string | null>(null);
+  const [isResendingAuthEmail, setIsResendingAuthEmail] = useState(false);
+  const [hasLoadedInitialData, setHasLoadedInitialData] = useState(false);
+  const previousUserIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!isSupabaseConfigured) {
@@ -785,6 +810,7 @@ function App() {
       setFocusEntries([]);
       setAnnouncements([]);
       setIsLoading(false);
+      setHasLoadedInitialData(false);
       return;
     }
 
@@ -795,6 +821,7 @@ function App() {
       console.error(refreshError);
     } finally {
       setIsLoading(false);
+      setHasLoadedInitialData(true);
     }
   }, [user, loadSubjects, loadFocusEntries, loadAnnouncements]);
 
@@ -1108,6 +1135,27 @@ function App() {
   const normalizedRole = profileRole?.toLowerCase() ?? "student";
   const isAdmin = normalizedRole === "admin";
 
+  useEffect(() => {
+    if (showEmailToast && userEmail && !emailToastMessage) {
+      setEmailToastMessage(`We emailed a verification link to ${userEmail}. Confirm it to unlock syncing across devices.`);
+    }
+  }, [showEmailToast, userEmail, emailToastMessage]);
+
+  useEffect(() => {
+    if (user) {
+      setPendingVerificationNotice(null);
+      setJustSignedUpEmail(null);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    const nextUserId = user?.id ?? null;
+    if (previousUserIdRef.current !== nextUserId) {
+      previousUserIdRef.current = nextUserId;
+      setHasLoadedInitialData(false);
+    }
+  }, [user?.id]);
+
   const handleAuthEmailChange = (event: ChangeEvent<HTMLInputElement>) => {
     setAuthEmail(event.target.value);
   };
@@ -1121,7 +1169,107 @@ function App() {
   };
 
   const toggleAuthView = () => {
-    setAuthView((previous) => (previous === "sign-in" ? "sign-up" : "sign-in"));
+    setAuthView((previous) => {
+      const next = previous === "sign-in" ? "sign-up" : "sign-in";
+      if (next === "sign-up") {
+        setAuthMessage(null);
+        setJustSignedUpEmail(null);
+        setPendingVerificationNotice(null);
+        setIsResendingAuthEmail(false);
+      }
+      return next;
+    });
+  };
+
+  const handleDismissEmailReminder = () => {
+    setEmailToastDismissed(true);
+    setShowEmailToast(false);
+    setEmailToastMessage(null);
+  };
+
+  const handleResendVerificationEmailForAuth = async () => {
+    if (!isSupabaseConfigured) {
+      setPendingVerificationNotice("Add your Supabase credentials before creating accounts.");
+      return;
+    }
+
+    const targetEmail = justSignedUpEmail ?? authEmail.trim().toLowerCase();
+    if (!targetEmail) {
+      setPendingVerificationNotice("Enter your email again so we can resend the verification link.");
+      return;
+    }
+
+    setIsResendingAuthEmail(true);
+
+    try {
+      const { error } = await supabase.auth.resend({
+        type: "signup",
+        email: targetEmail,
+        options: {
+          emailRedirectTo: EMAIL_VERIFICATION_REDIRECT
+        }
+      });
+
+      if (error) {
+        setPendingVerificationNotice(error.message || "We couldn't resend the verification email. Try again in a moment.");
+        return;
+      }
+
+      setPendingVerificationNotice(`We just re-sent the verification link to ${targetEmail}. Check your inbox and spam folder in a moment.`);
+      setJustSignedUpEmail(targetEmail);
+    } catch (resendError) {
+      const fallback =
+        resendError instanceof Error
+          ? resendError.message
+          : "We couldn't resend the verification email. Try again in a moment.";
+      setPendingVerificationNotice(fallback);
+    } finally {
+      setIsResendingAuthEmail(false);
+    }
+  };
+
+  const handleDismissPendingVerificationNotice = () => {
+    setPendingVerificationNotice(null);
+  };
+
+  const handleResendVerificationEmail = async () => {
+    if (!isSupabaseConfigured) {
+      setEmailToastMessage("Add your Supabase credentials to resend verification emails.");
+      return;
+    }
+
+    if (!userEmail) {
+      setEmailToastMessage("Sign in again so we can resend your verification link.");
+      return;
+    }
+
+    setIsResendingEmail(true);
+
+    try {
+      const { error } = await supabase.auth.resend({
+        type: "signup",
+        email: userEmail,
+        options: {
+          emailRedirectTo: EMAIL_VERIFICATION_REDIRECT
+        }
+      });
+
+      if (error) {
+        setEmailToastMessage(error.message || "We couldn't resend the verification email. Try again in a moment.");
+        return;
+      }
+
+      setEmailToastDismissed(false);
+      setEmailToastMessage(`A fresh verification link is on its way to ${userEmail}. Check your inbox and spam folder in a moment.`);
+    } catch (resendError) {
+      const fallback =
+        resendError instanceof Error
+          ? resendError.message
+          : "We couldn't resend the verification email. Try again in a moment.";
+      setEmailToastMessage(fallback);
+    } finally {
+      setIsResendingEmail(false);
+    }
   };
 
   const handleAuthSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -1166,13 +1314,21 @@ function App() {
       try {
         const { error } = await supabase.auth.signUp({
           email,
-          password
+          password,
+          options: {
+            emailRedirectTo: EMAIL_VERIFICATION_REDIRECT
+          }
         });
 
         if (error) {
           setAuthError(error.message);
         } else {
-          setAuthMessage("Check your email inbox to confirm your account, then sign in.");
+          const verificationMessage = `We just emailed a verification link to ${email}. Confirm it and then sign in to unlock your dashboard.`;
+          setAuthMessage(verificationMessage);
+          setJustSignedUpEmail(email);
+          setEmailToastMessage(verificationMessage);
+          setPendingVerificationNotice(verificationMessage);
+          setEmailToastDismissed(false);
           setAuthView("sign-in");
         }
       } catch (signUpError) {
@@ -1226,6 +1382,10 @@ function App() {
       setAnnouncementPanelOpen(false);
       setAnnouncementModalOpen(false);
       setIsLoading(false);
+      setHasLoadedInitialData(false);
+      setPendingVerificationNotice(null);
+      setJustSignedUpEmail(null);
+      setIsResendingAuthEmail(false);
     } catch (signOutError) {
       setError(
         signOutError instanceof Error ? signOutError.message : "Unable to sign out. Try again."
@@ -1287,6 +1447,55 @@ function App() {
           className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(148,163,184,0.12),_transparent_55%)]"
         />
         <div className="relative z-10 grid w-full max-w-6xl gap-8 rounded-[32px] border border-white/10 bg-white/5 p-8 shadow-[0_40px_120px_rgba(8,47,73,0.55)] backdrop-blur-2xl md:grid-cols-[1.15fr,1fr] md:p-12">
+          {pendingVerificationNotice && (
+            <div className="md:col-span-2 space-y-2 rounded-3xl border border-sky-200/80 bg-sky-900/20 px-5 py-4 text-sky-100 shadow-[0_24px_60px_rgba(56,189,248,0.15)]">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:gap-4">
+                <span className="flex h-10 w-10 items-center justify-center rounded-full bg-sky-100/20 text-sky-200">
+                  <MailCheck className="h-5 w-5" />
+                </span>
+                <div className="flex-1 space-y-1 text-sm">
+                  <p className="font-semibold text-sky-100">Verify your email to activate Paper Buddy</p>
+                  <p className="text-xs leading-relaxed text-sky-200">{pendingVerificationNotice}</p>
+                  {justSignedUpEmail ? (
+                    <p className="text-[11px] font-medium uppercase tracking-[0.25em] text-sky-200/80">
+                      Sent to {justSignedUpEmail}
+                    </p>
+                  ) : null}
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2 text-xs">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  className="bg-sky-500 text-white shadow-[0_12px_24px_rgba(56,189,248,0.4)] hover:bg-sky-400"
+                  onClick={handleResendVerificationEmailForAuth}
+                  disabled={isResendingAuthEmail}
+                >
+                  {isResendingAuthEmail ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Sending…
+                    </>
+                  ) : (
+                    <>
+                      <RotateCcw className="h-4 w-4" />
+                      Resend link
+                    </>
+                  )}
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="text-slate-200 hover:text-white"
+                  onClick={handleDismissPendingVerificationNotice}
+                >
+                  Dismiss
+                </Button>
+              </div>
+            </div>
+          )}
           <div className="flex flex-col justify-between gap-8">
             <div className="space-y-6">
               <div className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-medium uppercase tracking-[0.4em] text-slate-200">
@@ -1351,8 +1560,21 @@ function App() {
                 </div>
               )}
               {authMessage && (
-                <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700">
-                  {authMessage}
+                <div className="rounded-3xl border border-sky-200 bg-sky-50/90 px-4 py-4 text-sky-700 shadow-inner shadow-white/70">
+                  <div className="flex items-start gap-3">
+                    <span className="mt-0.5 flex h-9 w-9 items-center justify-center rounded-full bg-sky-100 text-sky-600">
+                      <MailCheck className="h-4 w-4" />
+                    </span>
+                    <div className="space-y-1 text-left">
+                      <p className="text-sm font-semibold">Almost there—verify your email</p>
+                      <p className="text-xs leading-relaxed text-sky-600">{authMessage}</p>
+                      {justSignedUpEmail ? (
+                        <p className="text-xs font-medium text-sky-500">
+                          Sent to <span className="font-semibold">{justSignedUpEmail}</span>
+                        </p>
+                      ) : null}
+                    </div>
+                  </div>
                 </div>
               )}
               <form className="space-y-5" onSubmit={handleAuthSubmit}>
@@ -1435,7 +1657,7 @@ function App() {
     );
   }
 
-  if (isLoading && subjects.length === 0) {
+  if (isLoading && !hasLoadedInitialData) {
     const awaitingEmailConfirmation = Boolean(user && !user.email_confirmed_at);
     return (
       <AnimatedLoadingScreen
@@ -1889,6 +2111,53 @@ function App() {
       {error && (
         <div className="fixed left-1/2 top-6 z-[60] w-[90vw] max-w-xl -translate-x-1/2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-center text-sm font-medium text-rose-600 shadow-lg shadow-rose-200/50">
           {error}
+        </div>
+      )}
+
+      {showEmailToast && (
+        <div className="fixed inset-x-0 top-0 z-[65] flex justify-center px-4 pt-4">
+          <div className="flex w-full max-w-2xl items-start gap-3 rounded-3xl border border-sky-200 bg-sky-50/95 px-5 py-4 text-sky-800 shadow-[0_24px_60px_rgba(56,189,248,0.25)] backdrop-blur">
+            <span className="mt-0.5 flex h-10 w-10 items-center justify-center rounded-full bg-sky-100 text-sky-600">
+              <MailCheck className="h-5 w-5" />
+            </span>
+            <div className="flex-1 space-y-2 text-sm">
+              <p className="font-semibold">Confirm your email to sync your Paper Buddy data</p>
+              <p className="text-xs leading-relaxed text-sky-600">
+                {emailToastMessage ?? `We emailed a verification link to ${userEmail}. Confirm it to unlock saved subjects, papers, and Pomodoro history across devices.`}
+              </p>
+              <div className="flex flex-wrap gap-2 pt-1 text-xs">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  className="bg-sky-600 text-white shadow-[0_12px_24px_rgba(56,189,248,0.4)] hover:bg-sky-500"
+                  onClick={handleResendVerificationEmail}
+                  disabled={isResendingEmail}
+                >
+                  {isResendingEmail ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Sending...
+                    </>
+                  ) : (
+                    <>
+                      <RotateCcw className="h-4 w-4" />
+                      Resend link
+                    </>
+                  )}
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="text-slate-500 hover:text-slate-700"
+                  onClick={handleDismissEmailReminder}
+                >
+                  Dismiss
+                </Button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
