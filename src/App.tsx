@@ -2676,14 +2676,24 @@ function App() {
                     Send a quick update that appears in every learner&apos;s notification center.
                   </p>
                 </div>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  onClick={openAnnouncementModal}
-                  className="rounded-full px-5"
-                >
-                  Announcement
-                </Button>
+                <div className="flex flex-wrap items-center gap-3">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="rounded-full border-slate-200 bg-white/80 text-slate-600 hover:bg-white"
+                    disabled
+                  >
+                    Clear announcements
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={openAnnouncementModal}
+                    className="rounded-full px-5"
+                  >
+                    Announcement
+                  </Button>
+                </div>
               </div>
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
                 {adminSummaryCards.map(({ label, value, hint, icon: Icon, gradient }) => (
